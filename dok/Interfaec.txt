@@ -2,8 +2,27 @@
 KOMMUNIKATIONSSCHNITTSTELLE: TECNOMATIX PLANT SIMULATION <-> PYTHON (RL)
 ========================================================================
 
-Dieses Dokument beschreibt das Daten-Interface und das Handshake-Protokoll 
+Dieses Dokument beschreibt das Daten-Interface und das Handshake-Protokoll
 zwischen dem Simulationsmodell in Plant Simulation und dem Python RL-Agenten.
+
+Stand: 04.08.2026
+
+------------------------------------------------------------------------
+0. MODELL-GRUNDANNAHMEN
+------------------------------------------------------------------------
+- Ein-Teil-Regel: Durch eine Eingangssperre am Bandanfang befindet sich zu
+  jedem Zeitpunkt maximal EIN Spiel im Transportbereich (Band + Roboter).
+  Dadurch ist eine Verwechslung von Zielen ausgeschlossen; das gewählte Ziel
+  wird direkt aus Tab_Action gelesen (kein MU-Attribut nötig).
+- MU-Klassen (Spiele) und ihre Sprach-Zuordnung:
+      game_de -> 1 (Deutsch)
+      game_en -> 2 (Englisch)
+      game_es -> 3 (Spanisch)
+  Die Erkennung erfolgt zentral in der Methode getLangType(mu) über mu.Name
+  (case-sensitive!).
+- Eingangssperre: Wird am Bandanfang (Sensor @ Position 0) gesetzt, sobald
+  ein Teil auffährt, und im Roboter-Ausgang wieder gelöst, nachdem das Teil
+  abgelegt wurde.
 
 ------------------------------------------------------------------------
 1. ZUSTANDSTABELLE: Tab_State
@@ -15,25 +34,25 @@ Index [Zeile, Spalte] | Variable     | Datentyp | Beschreibung
 ----------------------+--------------+----------+-----------------------------------------------------------
 Tab_State[1, 1]       | incType      | integer  | Typ des ankommenden Spiels am Roboter:
                       |              |          |   0 = Kein Spiel (leer)
-                      |              |          |   1 = DE (Deutsch)
-                      |              |          |   2 = EN (Englisch)
-                      |              |          |   3 = ES (Spanisch)
+                      |              |          |   1 = DE (game_de)
+                      |              |          |   2 = EN (game_en)
+                      |              |          |   3 = ES (game_es)
 ----------------------+--------------+----------+-----------------------------------------------------------
 Tab_State[2, 1]       | b1Counter    | integer  | Aktuelle Anzahl der Spiele in Puffer 1 (Wert von 0 bis 10)
 ----------------------+--------------+----------+-----------------------------------------------------------
 Tab_State[3, 1]       | b1Type       | integer  | Sprach-Typ der Spiele in Puffer 1:
                       |              |          |   0 = Puffer leer
-                      |              |          |   1 = DE (Deutsch)
-                      |              |          |   2 = EN (Englisch)
-                      |              |          |   3 = ES (Spanisch)
+                      |              |          |   1 = DE (game_de)
+                      |              |          |   2 = EN (game_en)
+                      |              |          |   3 = ES (game_es)
 ----------------------+--------------+----------+-----------------------------------------------------------
 Tab_State[4, 1]       | b2Counter    | integer  | Aktuelle Anzahl der Spiele in Puffer 2 (Wert von 0 bis 10)
 ----------------------+--------------+----------+-----------------------------------------------------------
 Tab_State[5, 1]       | b2Type       | integer  | Sprach-Typ der Spiele in Puffer 2:
                       |              |          |   0 = Puffer leer
-                      |              |          |   1 = DE (Deutsch)
-                      |              |          |   2 = EN (Englisch)
-                      |              |          |   3 = ES (Spanisch)
+                      |              |          |   1 = DE (game_de)
+                      |              |          |   2 = EN (game_en)
+                      |              |          |   3 = ES (game_es)
 ----------------------+--------------+----------+-----------------------------------------------------------
 Tab_State[6, 1]       | StateReady   | boolean  | Handshake-Signal von Plant Simulation an Python:
                       |              |          |   True  = Neuer Zustand liegt bereit zum Lesen.
@@ -51,6 +70,8 @@ Tab_Action[1, 1]      | ChosenAction | integer  | Die vom RL-Agenten gewählte T
                       |              |          |   1 = Puffer 1
                       |              |          |   2 = Puffer 2
                       |              |          |   3 = Rückführschleife
+                      |              |          | Hinweis: Der Wert bleibt bis zur nächsten Aktion erhalten
+                      |              |          | und wird vom Roboter-Ausgang direkt ausgelesen.
 ----------------------+--------------+----------+-----------------------------------------------------------
 Tab_Action[2, 1]      | ActionReady  | boolean  | Handshake-Signal von Python an Plant Simulation:
                       |              |          |   True  = Aktion wurde berechnet und in [1, 1] geschrieben.
@@ -59,7 +80,18 @@ Tab_Action[2, 1]      | ActionReady  | boolean  | Handshake-Signal von Python an
 ------------------------------------------------------------------------
 3. SYNCHRONISATIONS-FLOW (HANDSHAKE-PROTOKOLL)
 ------------------------------------------------------------------------
-Der Python RL-Agent sollte folgendem Ablauf in einer Endlosschleife folgen:
+
+Ablauf auf Plant-Simulation-Seite (vereinfacht):
+================================================
+  1. Sensor@Bandanfang:    Teil fährt auf -> EingangGesperrt := true (sofort!)
+  2. Förderstrecke-Ausgang: Teil erreicht Ende -> Tab_State[1..5] schreiben,
+                            Teil in g_WaitingMU merken, Robot-Eingang sperren,
+                            Tab_State[6,1] := true (StateReady)
+  3. OnActionReady:         wartet auf Tab_Action[2,1]=true -> Teil in Robot
+                            lassen, Handshakes zuruecksetzen
+  4. Roboter-Ausgang:       liest Tab_Action[1,1] -> bewegt Teil zum Ziel;
+                            anschliessend EingangGesperrt := false
+                            (naechstes Teil darf auffahren)
 
 Python-Ablaufsteuerung (Pseudocode):
 ====================================
@@ -67,23 +99,33 @@ while True:
     # 1. Warten, bis Plant Simulation einen neuen Zustand meldet
     while not get_value("Tab_State", row=6, col=1):
         time.sleep(0.01) # Kurze Pause zum Schonen der CPU
-        
+
     # 2. Zustand auslesen
     incType   = get_value("Tab_State", row=1, col=1)
     b1Counter = get_value("Tab_State", row=2, col=1)
     b1Type    = get_value("Tab_State", row=3, col=1)
     b2Counter = get_value("Tab_State", row=4, col=1)
     b2Type    = get_value("Tab_State", row=5, col=1)
-    
-    # 3. Empfang des Zustands bestätigen
+
+    # 3. Empfang des Zustands bestaetigen
     set_value("Tab_State", row=6, col=1, val=False)
-    
+
     # 4. Reinforcement Learning Agent berechnet die Aktion
-    # (z.B. action = agent.get_action([incType, b1Counter, b1Type, b2Counter, b2Type]))
     action = choose_rl_action(incType, b1Counter, b1Type, b2Counter, b2Type)
-    
-    # 5. Aktion zurück in die Simulation schreiben
+
+    # 5. Aktion zurueck in die Simulation schreiben
     set_value("Tab_Action", row=1, col=1, val=action)
-    
+
     # 6. Aktion freigeben (Handshake an Plant Simulation senden)
     set_value("Tab_Action", row=2, col=1, val=True)
+
+------------------------------------------------------------------------
+4. TEST OHNE PYTHON (OPTIONAL)
+------------------------------------------------------------------------
+Zum Testen ohne laufenden Python-Agenten kann in der Foerderstrecke-
+Ausgangssteuerung die Methode FakePython aufgerufen werden. Sie simuliert
+den Python-Schritt (Aktion waehlen + ActionReady setzen).
+
+WICHTIG: Im Produktivbetrieb mit Python muss der Aufruf .FakePython
+auskommentiert oder entfernt werden, sonst wuerden beide Seiten
+OnActionReady ausloesen (Doppelauslösung).
