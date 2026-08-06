@@ -10,6 +10,42 @@ import os
 import json
 
 
+def parse_plantsim_time(time_val):
+    """
+    Konvertiert Plant-Simulation Zeitstrings (z.B. '31:07.2186' oder '01:30:15.5')
+    oder int/float-Werte sauber in Sekunden (float).
+    """
+    if isinstance(time_val, (int, float)):
+        return float(time_val)
+
+    str_val = str(time_val).strip()
+    try:
+        return float(str_val)
+    except ValueError:
+        pass
+
+    parts = str_val.split(":")
+    if len(parts) == 2:
+        minutes = float(parts[0])
+        seconds = float(parts[1])
+        return minutes * 60.0 + seconds
+    elif len(parts) == 3:
+        hours = float(parts[0])
+        minutes = float(parts[1])
+        seconds = float(parts[2])
+        return hours * 3600.0 + minutes * 60.0 + seconds
+
+    return 0.0
+
+
+def format_mm_ss(sim_seconds):
+    """Formatiert Sekunden sauber in 'MM:SS' ohne Millisekunden (z.B. '21:04')."""
+    total_sec = int(round(sim_seconds))
+    minutes = total_sec // 60
+    seconds = total_sec % 60
+    return f"{minutes:02d}:{seconds:02d}"
+
+
 class SimulationFailedError(Exception):
     """Wird geworfen, wenn die Simulation steht, aber kein StateReady vorliegt."""
     pass
@@ -27,6 +63,7 @@ class Agent:
     CELL_G_STATE_1    = "Tab_g_State[1,1]"
     CELL_G_STATE_2    = "Tab_g_State[2,1]"
     CELL_G_STATE_3    = "Tab_g_State[3,1]"
+    CELL_G_TIME       = "Tab_g_State[4,1]"
 
     CELL_ACTION       = "Tab_Action[1,1]"
     CELL_ACTION_READY = "Tab_Action[2,1]"
@@ -73,14 +110,18 @@ class Agent:
         g1 = int(self.plantsim.get_value(self.CELL_G_STATE_1))
         g2 = int(self.plantsim.get_value(self.CELL_G_STATE_2))
         g3 = int(self.plantsim.get_value(self.CELL_G_STATE_3))
+        raw_time = self.plantsim.get_value(self.CELL_G_TIME)
+        sim_time = parse_plantsim_time(raw_time)
 
         raw_state = {
-            "inc":         int(self.plantsim.get_value(self.CELL_INC)),
-            "b1cnt":       int(self.plantsim.get_value(self.CELL_B1_COUNT)),
-            "b1typ":       int(self.plantsim.get_value(self.CELL_B1_TYPE)),
-            "b2cnt":       int(self.plantsim.get_value(self.CELL_B2_COUNT)),
-            "b2typ":       int(self.plantsim.get_value(self.CELL_B2_TYPE)),
-            "drain_total": g1 + g2 + g3,
+            "inc":          int(self.plantsim.get_value(self.CELL_INC)),
+            "b1cnt":        int(self.plantsim.get_value(self.CELL_B1_COUNT)),
+            "b1typ":        int(self.plantsim.get_value(self.CELL_B1_TYPE)),
+            "b2cnt":        int(self.plantsim.get_value(self.CELL_B2_COUNT)),
+            "b2typ":        int(self.plantsim.get_value(self.CELL_B2_TYPE)),
+            "drain_total":  g1 + g2 + g3,
+            "sim_time":     sim_time,
+            "sim_time_str": format_mm_ss(sim_time),
         }
         state_key = (raw_state["inc"], raw_state["b1typ"], raw_state["b2typ"])
 

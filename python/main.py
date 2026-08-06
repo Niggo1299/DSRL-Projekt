@@ -9,6 +9,7 @@ import time
 
 from plantsim.plantsim import Plantsim
 from agent.agent import Agent, SimulationFailedError
+from visualization.visualization import LivePlotter
 
 # ---------------- Konfiguration ----------------
 MODEL_PATH = (
@@ -21,6 +22,7 @@ POLL_INTERVAL      = 0.002   # s - billiger COM-Call waehrend die Sim pausiert
 TIMEOUT            = 30.0    # s - max. Wartezeit auf einen Entscheidungspunkt
 
 MANUAL_CONTROL     = False   # True = User steuert per Tastatur, False = Reflex-Agent steuert
+USE_LIVE_PLOT      = True    # True = Live-Plotter (Teile im Drain / Timestep) anzeigen
 TARGET_DRAIN_COUNT = 1000    # Abbrechen, wenn 1000 Teile im Drain sind (None = deaktiviert)
 # -----------------------------------------------
 
@@ -60,7 +62,7 @@ def wait_for_decision(ps, timeout=TIMEOUT):
         time.sleep(POLL_INTERVAL)
 
 
-def run_episode(ps, agent):
+def run_episode(ps, agent, plotter=None):
     """Fuehrt eine Episode mit dem Reflex-Agenten aus."""
     ps.reset_simulation()
     agent.reset()
@@ -70,6 +72,10 @@ def run_episode(ps, agent):
     # Ersten Entscheidungspunkt abwarten
     wait_for_decision(ps)
     state, raw_state = agent.get_state()
+
+    # Initialer Plot-Punkt
+    if plotter:
+        plotter.update(raw_state["sim_time"], raw_state["drain_total"])
 
     while True:
         # 1. Aktion aus Nachschlagetabelle bestimmen
@@ -91,14 +97,20 @@ def run_episode(ps, agent):
         act_name = {1: "Buffer 1", 2: "Buffer 2", 3: "Return"}.get(action, str(action))
         print(
             f"  -> Step {step}: State={state} => Reflex-Aktion={act_name} "
-            f"(Drain={next_raw_state['drain_total']}/{TARGET_DRAIN_COUNT if TARGET_DRAIN_COUNT else 'inf'})"
+            f"(SimTime={next_raw_state['sim_time_str']}, Drain={next_raw_state['drain_total']}/{TARGET_DRAIN_COUNT if TARGET_DRAIN_COUNT else 'inf'})"
         )
+
+        # 4. Live-Plot mit echter Plant-Simulation-Zeit aktualisieren
+        if plotter:
+            plotter.update(next_raw_state["sim_time"], next_raw_state["drain_total"])
 
         state, raw_state = next_state, next_raw_state
 
-        # 4. Abbruchbedingung prüfen: Zielanzahl produzierter Teile erreicht?
+        # 5. Abbruchbedingung prüfen: Zielanzahl produzierter Teile erreicht?
         if TARGET_DRAIN_COUNT is not None and next_raw_state["drain_total"] >= TARGET_DRAIN_COUNT:
             print(f"\n[ZIEL ERREICHT] {next_raw_state['drain_total']} / {TARGET_DRAIN_COUNT} Teile produziert.")
+            if plotter:
+                plotter.save_plot()
             break
 
 
@@ -116,6 +128,8 @@ def main():
     agent = Agent(ps, manual_control=MANUAL_CONTROL)
     agent.print_table()
 
+    plotter = LivePlotter() if USE_LIVE_PLOT else None
+
     exit_code = 0
     try:
         while True:
@@ -124,13 +138,17 @@ def main():
             ).strip().lower()
             if cmd == "q":
                 break
-            run_episode(ps, agent)
+            run_episode(ps, agent, plotter)
+            if plotter:
+                plotter.save_plot()
 
     except SimulationFailedError as e:
         print(f"\n[ABBRUCH] simulation failed: {e}")
         exit_code = 1
 
     finally:
+        if plotter:
+            plotter.save_plot()
         ps.quit()          # Plant Simulation schliessen
 
     sys.exit(exit_code)
