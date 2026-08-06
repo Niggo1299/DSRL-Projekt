@@ -1,7 +1,7 @@
 """
 main.py
 -------
-Initialisiert Plant Simulation und den Agenten und fuehrt Episoden aus.
+Initialisiert Plant Simulation und den Reflex-Agenten und führt Episoden aus.
 """
 
 import sys
@@ -15,11 +15,13 @@ MODEL_PATH = (
     r"C:\Users\Niko\OneDrive - Fachhochschule Bielefeld"
     r"\Diskrete Simulation und Reinforcement Learning\Projekt\plant\plantmodel.spp"
 )
-PLANTSIM_VERSION = "16.1"
-CONTEXT          = ".Modelle.Modell"
-POLL_INTERVAL    = 0.002   # s - billiger COM-Call waehrend die Sim pausiert
-TIMEOUT          = 30.0    # s - max. Wartezeit auf einen Entscheidungspunkt
-MANUAL_CONTROL   = True    # True = User steuert, False = Agent steuert
+PLANTSIM_VERSION   = "16.1"
+CONTEXT            = ".Modelle.Modell"
+POLL_INTERVAL      = 0.002   # s - billiger COM-Call waehrend die Sim pausiert
+TIMEOUT            = 30.0    # s - max. Wartezeit auf einen Entscheidungspunkt
+
+MANUAL_CONTROL     = False   # True = User steuert per Tastatur, False = Reflex-Agent steuert
+TARGET_DRAIN_COUNT = 1000    # Abbrechen, wenn 1000 Teile im Drain sind (None = deaktiviert)
 # -----------------------------------------------
 
 
@@ -59,33 +61,45 @@ def wait_for_decision(ps, timeout=TIMEOUT):
 
 
 def run_episode(ps, agent):
-    """Fuehrt eine Episode aus. Reguläres Ende: Usereingabe 'q'."""
+    """Fuehrt eine Episode mit dem Reflex-Agenten aus."""
     ps.reset_simulation()
     agent.reset()
     ps.start_simulation()
 
     step = 0
+    # Ersten Entscheidungspunkt abwarten
+    wait_for_decision(ps)
+    state, raw_state = agent.get_state()
+
     while True:
-        # 1. Warten, bis ein neuer Zustand ansteht
-        wait_for_decision(ps)
-
-        # 2. Zustand auslesen
-        state = agent.get_state()
-
-        # 3. Aktion bestimmen (User oder Agent)
+        # 1. Aktion aus Nachschlagetabelle bestimmen
         action = agent.select_action(state)
         if action is None:
             print("  Episode durch Benutzer beendet.")
             break
 
-        # 4. Aktion schreiben + Simulation freigeben (Handshake)
+        # 2. Aktion schreiben + Simulation freigeben (Handshake)
         agent.set_action(action)
-
-        # 5. Simulation fortsetzen (RESUME)
         ps.start_simulation()
 
         step += 1
-        print(f"  -> Step {step}: Action = {action} freigegeben.")
+
+        # 3. Warten, bis der naechste Entscheidungspunkt erreicht ist
+        wait_for_decision(ps)
+        next_state, next_raw_state = agent.get_state()
+
+        act_name = {1: "Buffer 1", 2: "Buffer 2", 3: "Return"}.get(action, str(action))
+        print(
+            f"  -> Step {step}: State={state} => Reflex-Aktion={act_name} "
+            f"(Drain={next_raw_state['drain_total']}/{TARGET_DRAIN_COUNT if TARGET_DRAIN_COUNT else 'inf'})"
+        )
+
+        state, raw_state = next_state, next_raw_state
+
+        # 4. Abbruchbedingung prüfen: Zielanzahl produzierter Teile erreicht?
+        if TARGET_DRAIN_COUNT is not None and next_raw_state["drain_total"] >= TARGET_DRAIN_COUNT:
+            print(f"\n[ZIEL ERREICHT] {next_raw_state['drain_total']} / {TARGET_DRAIN_COUNT} Teile produziert.")
+            break
 
 
 def main():
@@ -100,6 +114,7 @@ def main():
     ps.set_event_controller()
 
     agent = Agent(ps, manual_control=MANUAL_CONTROL)
+    agent.print_table()
 
     exit_code = 0
     try:
