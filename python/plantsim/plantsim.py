@@ -22,11 +22,11 @@ class Plantsim:
         if version != '':
             dispatch_string += f'.{version}'
 
-        # Late-binding version
-        #self.plantsim = win32.Dispatch(dispatch_string)
-
-        # Early-binding version
-        self.plantsim = win32.gencache.EnsureDispatch(dispatch_string)
+        # Try Early-binding (gencache), fallback to Late-binding (Dispatch) if cache is corrupted
+        try:
+            self.plantsim = win32.gencache.EnsureDispatch(dispatch_string)
+        except Exception:
+            self.plantsim = win32.Dispatch(dispatch_string)
 
         if visible:
             # Open the Plant Simulation window

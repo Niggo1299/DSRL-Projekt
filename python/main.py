@@ -9,7 +9,7 @@ import time
 
 from plantsim.plantsim import Plantsim
 from agent.agent import Agent, SimulationFailedError
-from visualization.visualization import LivePlotter
+from visualization.visualization import SimulationPlotter
 
 # ---------------- Konfiguration ----------------
 MODEL_PATH = (
@@ -22,7 +22,7 @@ POLL_INTERVAL      = 0.002   # s - billiger COM-Call waehrend die Sim pausiert
 TIMEOUT            = 30.0    # s - max. Wartezeit auf einen Entscheidungspunkt
 
 MANUAL_CONTROL     = False   # True = User steuert per Tastatur, False = Reflex-Agent steuert
-USE_LIVE_PLOT      = True    # True = Live-Plotter (Teile im Drain / Timestep) anzeigen
+SAVE_CSV_DATA      = True    # True = Ergebnisse nach Episode als CSV speichern, False = Deaktiviert
 TARGET_DRAIN_COUNT = 1000    # Abbrechen, wenn 1000 Teile im Drain sind (None = deaktiviert)
 # -----------------------------------------------
 
@@ -73,9 +73,9 @@ def run_episode(ps, agent, plotter=None):
     wait_for_decision(ps)
     state, raw_state = agent.get_state()
 
-    # Initialer Plot-Punkt
+    # Initialer Datensatz
     if plotter:
-        plotter.update(raw_state["sim_time"], raw_state["drain_total"])
+        plotter.record(raw_state["sim_time"], raw_state["drain_total"], step=0)
 
     while True:
         # 1. Aktion aus Nachschlagetabelle bestimmen
@@ -100,9 +100,9 @@ def run_episode(ps, agent, plotter=None):
             f"(SimTime={next_raw_state['sim_time_str']}, Drain={next_raw_state['drain_total']}/{TARGET_DRAIN_COUNT if TARGET_DRAIN_COUNT else 'inf'})"
         )
 
-        # 4. Live-Plot mit echter Plant-Simulation-Zeit aktualisieren
+        # 4. Datenpunkt fuer spätere Auswertung speichern
         if plotter:
-            plotter.update(next_raw_state["sim_time"], next_raw_state["drain_total"])
+            plotter.record(next_raw_state["sim_time"], next_raw_state["drain_total"], step=step)
 
         state, raw_state = next_state, next_raw_state
 
@@ -110,7 +110,7 @@ def run_episode(ps, agent, plotter=None):
         if TARGET_DRAIN_COUNT is not None and next_raw_state["drain_total"] >= TARGET_DRAIN_COUNT:
             print(f"\n[ZIEL ERREICHT] {next_raw_state['drain_total']} / {TARGET_DRAIN_COUNT} Teile produziert.")
             if plotter:
-                plotter.save_plot()
+                plotter.save_csv()
             break
 
 
@@ -128,7 +128,7 @@ def main():
     agent = Agent(ps, manual_control=MANUAL_CONTROL)
     agent.print_table()
 
-    plotter = LivePlotter() if USE_LIVE_PLOT else None
+    plotter = SimulationPlotter() if SAVE_CSV_DATA else None
 
     exit_code = 0
     try:
@@ -140,18 +140,19 @@ def main():
                 break
             run_episode(ps, agent, plotter)
             if plotter:
-                plotter.save_plot()
+                plotter.save_csv()
 
     except SimulationFailedError as e:
         print(f"\n[ABBRUCH] simulation failed: {e}")
         exit_code = 1
 
     finally:
-        if plotter:
-            plotter.save_plot()
+        if plotter and plotter.records:
+            plotter.save_csv()
         ps.quit()          # Plant Simulation schliessen
 
     sys.exit(exit_code)
+
 
 
 if __name__ == "__main__":
