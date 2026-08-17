@@ -1,120 +1,91 @@
 """
 main.py
 -------
-Initialisiert Plant Simulation und den Reflex-Agenten und führt Episoden aus.
+Initialisiert Plant Simulation und das Problem-Environment.
+Führt Episoden mit dem gewählten Agenten aus (Standard: Simple Reflex Agent).
 """
 
 import sys
-import time
 
 from plantsim.plantsim import Plantsim
-from agent.agent import Agent, SimulationFailedError
+from problem.problem import PlantSimulationProblem, SimulationFailedError
+from agent.agent import ReflexAgent, QLearningAgent, TrainingTestAgent
 from visualization.visualization import SimulationPlotter
 
-# ---------------- Konfiguration ----------------
+# ============================ Konfiguration ============================
 MODEL_PATH = (
     r"C:\Users\Niko\OneDrive - Fachhochschule Bielefeld"
     r"\Diskrete Simulation und Reinforcement Learning\Projekt\plant\plantmodel.spp"
 )
 PLANTSIM_VERSION   = "16.1"
 CONTEXT            = ".Modelle.Modell"
-POLL_INTERVAL      = 0.002   # s - billiger COM-Call waehrend die Sim pausiert
+POLL_INTERVAL      = 0.002   # s - Abfrageintervall für StateReady
 TIMEOUT            = 30.0    # s - max. Wartezeit auf einen Entscheidungspunkt
 
-MANUAL_CONTROL     = False   # True = User steuert per Tastatur, False = Reflex-Agent steuert
-SAVE_CSV_DATA      = True    # True = Ergebnisse nach Episode als CSV speichern, False = Deaktiviert
+# Agenten-Auswahl: "reflex", "manual", "q_learning", "training_test"
+AGENT_TYPE         = "reflex"
+
+SAVE_CSV_DATA      = True    # True = Ergebnisse nach Episode als CSV speichern
 TARGET_DRAIN_COUNT = 1000    # Abbrechen, wenn 1000 Teile im Drain sind (None = deaktiviert)
-# -----------------------------------------------
+# =======================================================================
 
 
-def is_running(ps):
-    """Nutzt die zugrunde liegende COM-Schnittstelle der Library."""
-    return ps.plantsim.IsSimulationRunning()
+def create_agent(agent_type, problem):
+    """Erzeugt den gewünschten Agenten basierend auf der Konfiguration."""
+    if agent_type == "reflex":
+        return ReflexAgent(problem, manual_control=False)
+    elif agent_type == "manual":
+        return ReflexAgent(problem, manual_control=True)
+    elif agent_type == "q_learning":
+        return QLearningAgent(problem)
+    elif agent_type == "training_test":
+        return TrainingTestAgent(problem)
+    else:
+        raise ValueError(f"Unbekannter Agenten-Typ: {agent_type}")
 
 
-def state_ready(ps):
-    return bool(ps.get_value(Agent.CELL_STATE_READY))
+def run_episode(problem, agent, plotter=None):
+    """Führt eine Episode mit dem konfigurierten Agenten aus."""
+    print(f"\n--- Starte Episode mit Agent '{AGENT_TYPE}' ---")
+    state = problem.reset()
 
-
-def wait_for_decision(ps, timeout=TIMEOUT):
-    """
-    Wartet, bis StateReady == True (echter Entscheidungspunkt).
-
-    :raises SimulationFailedError: Sim steht ohne StateReady oder Timeout.
-    """
-    t0 = time.time()
-    time.sleep(0.05)                       # kurze Anlaufzeit fuer die Sim
-
-    while True:
-        if state_ready(ps):
-            return
-
-        if not is_running(ps) and not state_ready(ps):
-            raise SimulationFailedError(
-                "Simulation failed"
-            )
-
-        if time.time() - t0 > timeout:
-            raise SimulationFailedError(
-                f"Timeout ({timeout} s) beim Warten auf einen Entscheidungspunkt."
-            )
-
-        time.sleep(POLL_INTERVAL)
-
-
-def run_episode(ps, agent, plotter=None):
-    """Fuehrt eine Episode mit dem Reflex-Agenten aus."""
-    ps.reset_simulation()
-    agent.reset()
-    ps.start_simulation()
+    # Initialer Datenpunkt
+    if plotter:
+        plotter.record(state.sim_time, state.drain_total, step=0)
 
     step = 0
-    # Ersten Entscheidungspunkt abwarten
-    wait_for_decision(ps)
-    state, raw_state = agent.get_state()
+    act_names = {1: "Buffer 1", 2: "Buffer 2", 3: "Return"}
 
-    # Initialer Datensatz
-    if plotter:
-        plotter.record(raw_state["sim_time"], raw_state["drain_total"], step=0)
-
-    while True:
-        # 1. Aktion aus Nachschlagetabelle bestimmen
-        action = agent.select_action(state)
+    while not problem.is_goal_state(state):
+        # 1. Aktion durch Agenten bestimmen
+        action = agent.act()
         if action is None:
             print("  Episode durch Benutzer beendet.")
             break
 
-        # 2. Aktion schreiben + Simulation freigeben (Handshake)
-        agent.set_action(action)
-        ps.start_simulation()
-
         step += 1
-
-        # 3. Warten, bis der naechste Entscheidungspunkt erreicht ist
-        wait_for_decision(ps)
-        next_state, next_raw_state = agent.get_state()
-
-        act_name = {1: "Buffer 1", 2: "Buffer 2", 3: "Return"}.get(action, str(action))
+        act_str = act_names.get(action, str(action))
         print(
-            f"  -> Step {step}: State={state} => Reflex-Aktion={act_name} "
-            f"(SimTime={next_raw_state['sim_time_str']}, Drain={next_raw_state['drain_total']}/{TARGET_DRAIN_COUNT if TARGET_DRAIN_COUNT else 'inf'})"
+            f"  -> Step {step}: State={state.to_state()} => Aktion={act_str} "
+            f"(SimTime={state.sim_time_str}, Drain={state.drain_total}/{TARGET_DRAIN_COUNT if TARGET_DRAIN_COUNT else 'inf'})"
         )
 
-        # 4. Datenpunkt fuer spätere Auswertung speichern
+        # 2. Aktion an Plant Simulation übergeben (Handshake)
+        problem.act(action)
+
+        # 3. Neuen Zustand abfragen
+        state = problem.get_current_state()
+
+        # 4. Datenpunkt für Plotter/CSV speichern
         if plotter:
-            plotter.record(next_raw_state["sim_time"], next_raw_state["drain_total"], step=step)
+            plotter.record(state.sim_time, state.drain_total, step=step)
 
-        state, raw_state = next_state, next_raw_state
-
-        # 5. Abbruchbedingung prüfen: Zielanzahl produzierter Teile erreicht?
-        if TARGET_DRAIN_COUNT is not None and next_raw_state["drain_total"] >= TARGET_DRAIN_COUNT:
-            print(f"\n[ZIEL ERREICHT] {next_raw_state['drain_total']} / {TARGET_DRAIN_COUNT} Teile produziert.")
-            if plotter:
-                plotter.save_csv()
-            break
+    if problem.is_goal_state(state):
+        print(f"\n[ZIEL ERREICHT] {state.drain_total} / {TARGET_DRAIN_COUNT} Teile produziert in {state.sim_time_str}!")
 
 
 def main():
+    # 1. Plant Simulation initialisieren
     ps = Plantsim(
         path_context=CONTEXT,
         model=MODEL_PATH,
@@ -125,34 +96,47 @@ def main():
     )
     ps.set_event_controller()
 
-    agent = Agent(ps, manual_control=MANUAL_CONTROL)
-    agent.print_table()
+    # 2. Problem-Environment erzeugen
+    problem = PlantSimulationProblem(
+        plantsim=ps,
+        target_drain_count=TARGET_DRAIN_COUNT,
+        poll_interval=POLL_INTERVAL,
+        timeout=TIMEOUT,
+    )
+
+    # 3. Agenten instanziieren
+    agent = create_agent(AGENT_TYPE, problem)
+    if isinstance(agent, ReflexAgent) and not agent.manual_control:
+        agent.print_table()
 
     plotter = SimulationPlotter() if SAVE_CSV_DATA else None
-
     exit_code = 0
+
     try:
-        while True:
-            cmd = input(
-                "\n[ENTER] = neue Episode starten, 'q' = Programm beenden: "
-            ).strip().lower()
-            if cmd == "q":
-                break
-            run_episode(ps, agent, plotter)
-            if plotter:
-                plotter.save_csv()
+        if AGENT_TYPE == "q_learning":
+            print("\n[RL-TRAINING] Starte Q-Learning Trainingslauf...")
+            steps = agent.train(episodes=10, alpha=0.1, max_steps=1000)
+            agent.save_q_table("q_table.npy")
+            print(f"[RL-TRAINING] Training abgeschlossen. Schritte je Episode: {steps}")
+        else:
+            while True:
+                cmd = input("\n[ENTER] = neue Episode starten, 'q' = Programm beenden: ").strip().lower()
+                if cmd == "q":
+                    break
+                run_episode(problem, agent, plotter)
+                if plotter:
+                    plotter.save_csv()
 
     except SimulationFailedError as e:
-        print(f"\n[ABBRUCH] simulation failed: {e}")
+        print(f"\n[ABBRUCH] Simulation fehlgeschlagen: {e}")
         exit_code = 1
 
     finally:
         if plotter and plotter.records:
             plotter.save_csv()
-        ps.quit()          # Plant Simulation schliessen
+        ps.quit()  # Plant Simulation sauber beenden
 
     sys.exit(exit_code)
-
 
 
 if __name__ == "__main__":

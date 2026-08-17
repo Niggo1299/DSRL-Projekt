@@ -1,157 +1,114 @@
 """
 agent.py
 --------
-Reflex-Agent für Plant Simulation.
-Liest Aktionen für Zustände aus einer vorgefertigten Nachschlagetabelle (q_table.json).
-Enthält KEINE Q-Learning-Trainingslogik mehr.
+Enthält die Agenten-Klassen gemäß den Vorlesungs-Vorlagen:
+- Agent (Basisklasse)
+- ReflexAgent (Simple Reflex Agent mit Nachschlagetabelle)
+- TrainingTestAgent (Ausführen trainierter Q-Tables)
+- QLearningAgent (Tabellarisches Q-Learning mit GLIE-Exploration)
 """
 
 import os
 import json
+import cProfile
+import numpy as np
 
 
-def parse_plantsim_time(time_val):
-    """
-    Konvertiert Plant-Simulation Zeitstrings (z.B. '31:07.2186' oder '01:30:15.5')
-    oder int/float-Werte sauber in Sekunden (float).
-    """
-    if isinstance(time_val, (int, float)):
-        return float(time_val)
-
-    str_val = str(time_val).strip()
-    try:
-        return float(str_val)
-    except ValueError:
-        pass
-
-    parts = str_val.split(":")
-    if len(parts) == 2:
-        minutes = float(parts[0])
-        seconds = float(parts[1])
-        return minutes * 60.0 + seconds
-    elif len(parts) == 3:
-        hours = float(parts[0])
-        minutes = float(parts[1])
-        seconds = float(parts[2])
-        return hours * 3600.0 + minutes * 60.0 + seconds
-
-    return 0.0
-
-
-def format_mm_ss(sim_seconds):
-    """Formatiert Sekunden sauber in 'MM:SS' ohne Millisekunden (z.B. '21:04')."""
-    total_sec = int(round(sim_seconds))
-    minutes = total_sec // 60
-    seconds = total_sec % 60
-    return f"{minutes:02d}:{seconds:02d}"
-
-
-class SimulationFailedError(Exception):
-    """Wird geworfen, wenn die Simulation steht, aber kein StateReady vorliegt."""
-    pass
-
-
+# =====================================================================
+# 1. BASISKLASSE (1:1 aus Vorlesungs-Vorlage)
+# =====================================================================
 class Agent:
-    # ---- Tabellen-/Zellenadressen zentral gehalten -------------------------
-    CELL_INC          = "Tab_State[1,1]"
-    CELL_B1_COUNT     = "Tab_State[2,1]"
-    CELL_B1_TYPE      = "Tab_State[3,1]"
-    CELL_B2_COUNT     = "Tab_State[4,1]"
-    CELL_B2_TYPE      = "Tab_State[5,1]"
-    CELL_STATE_READY  = "Tab_State[6,1]"
+    def __init__(self, problem):
+        self.problem = problem
+        self.action_plan = []
+        self.planning_index = 0
 
-    CELL_G_STATE_1    = "Tab_g_State[1,1]"
-    CELL_G_STATE_2    = "Tab_g_State[2,1]"
-    CELL_G_STATE_3    = "Tab_g_State[3,1]"
-    CELL_G_TIME       = "Tab_g_State[4,1]"
+    def plan(self, current_state):
+        actions = []
+        return actions
 
-    CELL_ACTION       = "Tab_Action[1,1]"
-    CELL_ACTION_READY = "Tab_Action[2,1]"
+    def act(self):
+        if len(self.action_plan) == 0:
+            # percept
+            current_state = self.problem.get_current_state()
+            # search
+            pr = cProfile.Profile()
+            pr.enable()
 
-    def __init__(self, plantsim, manual_control=False, json_file="q_table.json"):
-        """
-        :param plantsim:       Instanz der Plantsim-Wrapper-Klasse
-        :param manual_control: True  -> Aktionen kommen vom User (user_input)
-                               False -> Aktionen kommen aus der Reflex-Tabelle
-        :param json_file:      Name der Tabellendatei im 'agent'-Ordner
-        """
-        self.plantsim = plantsim
+            self.action_plan = self.plan(current_state)
+
+            pr.disable()
+            # after your program ends
+            pr.print_stats(sort="calls")
+
+        if len(self.action_plan) > 0:
+            action = self.action_plan[0]
+            current_state_hash = self.problem.to_state()
+            if type(action) == dict:
+                for k in action.keys():
+                    if current_state_hash in k:
+                        self.action_plan = action[k]
+                        action = self.action_plan[0]
+                        break
+            self.action_plan = self.action_plan[1:]
+            return action
+
+    def to_state(self, state):
+        if type(state) == list:
+            states = []
+            for s in state:
+                states.append(s.to_state())
+            return frozenset(states)
+        else:
+            return state.to_state()
+
+
+# =====================================================================
+# 2. REFLEX-AGENT (Simple Reflex Agent für das Hochregallager)
+# =====================================================================
+class ReflexAgent(Agent):
+    """
+    Reflex-Agent für das Warehouse-Problem.
+    Liest Aktionen für Zustände (inc, b1typ, b2typ) aus einer Nachschlagetabelle (q_table.json).
+    """
+
+    def __init__(self, problem, json_file="q_table.json", manual_control=False):
+        super().__init__(problem)
+        self.actions = problem.get_all_actions()
         self.manual_control = manual_control
-        self.actions = [1, 2, 3]          # 1 = buffer1, 2 = buffer2, 3 = return
-
-        self.table = {}                   # Dict: (inc, b1typ, b2typ) -> action
+        self.table = {}
         self.json_path = self._resolve_path(json_file)
 
-        self.last_state = None
-        self.last_raw_state = None
-        self.last_action = None
-
-        # Versuchen, die Tabelle aus JSON zu laden; falls nicht vorhanden, erstelle Standard-Tabelle
         if not self.load_table(self.json_path):
             print("Erstelle vollständige Standard-Reflex-Tabelle für alle 48 Zustände...")
             self.generate_default_table()
             self.save_table(self.json_path)
 
     def _resolve_path(self, filename):
-        """Stellt sicher, dass Dateipfade im 'agent'-Ordner liegen."""
         agent_dir = os.path.dirname(__file__)
         if not os.path.isabs(filename):
             base_name = os.path.basename(filename)
             return os.path.join(agent_dir, base_name)
         return filename
 
-    # ------------------------------------------------------------------ State
-    def get_state(self):
-        """
-        Liest den aktuellen Zustand aus der Plant-Simulation.
-        :return: (state_key, raw_state)
-                 state_key = (inc, b1typ, b2typ)
-        """
-        g1 = int(self.plantsim.get_value(self.CELL_G_STATE_1))
-        g2 = int(self.plantsim.get_value(self.CELL_G_STATE_2))
-        g3 = int(self.plantsim.get_value(self.CELL_G_STATE_3))
-        raw_time = self.plantsim.get_value(self.CELL_G_TIME)
-        sim_time = parse_plantsim_time(raw_time)
+    def act(self):
+        """Wählt die Aktion für den aktuellen Zustand aus."""
+        current_state = self.problem.get_current_state()
+        state_key = current_state.to_state()
 
-        raw_state = {
-            "inc":          int(self.plantsim.get_value(self.CELL_INC)),
-            "b1cnt":        int(self.plantsim.get_value(self.CELL_B1_COUNT)),
-            "b1typ":        int(self.plantsim.get_value(self.CELL_B1_TYPE)),
-            "b2cnt":        int(self.plantsim.get_value(self.CELL_B2_COUNT)),
-            "b2typ":        int(self.plantsim.get_value(self.CELL_B2_TYPE)),
-            "drain_total":  g1 + g2 + g3,
-            "sim_time":     sim_time,
-            "sim_time_str": format_mm_ss(sim_time),
-        }
-        state_key = (raw_state["inc"], raw_state["b1typ"], raw_state["b2typ"])
-
-        self.last_raw_state = raw_state
-        self.last_state = state_key
-        return state_key, raw_state
-
-    # ----------------------------------------------------------------- Action
-    def select_action(self, state):
-        """
-        Reflex-Aktionsauswahl: Liest die passende Aktion aus der geladenen Tabelle.
-
-        :param state: Tuple (inc, b1typ, b2typ)
-        :return: int (1, 2 oder 3) oder None (Episode beenden)
-        """
         if self.manual_control:
-            action = self.user_input(state)
-        else:
-            if state in self.table:
-                action = self.table[state]
-            else:
-                # Fallback Reflex-Regel falls Zustand unbekannt ist
-                action = self._fallback_rule(state)
+            return self.user_input(state_key)
 
-        self.last_action = action
+        if state_key in self.table:
+            action = self.table[state_key]
+        else:
+            action = self._fallback_rule(state_key)
+
         return action
 
-    def _fallback_rule(self, state):
+    def _fallback_rule(self, state_key):
         """Experten-Reflexregel als Fallback."""
-        inc, b1typ, b2typ = state
+        inc, b1typ, b2typ = state_key
         if b1typ == inc:
             return 1
         elif b2typ == inc:
@@ -161,43 +118,21 @@ class Agent:
         elif b2typ == 0:
             return 2
         else:
-            return 3  # Return / Ablehnen
+            return 3  # Return
 
-    def set_action(self, action):
-        """
-        Schreibt die Aktion zurueck und gibt die Simulation frei (Handshake).
-        1) StateReady  = False  (Zustand quittiert)
-        2) Action      = action
-        3) ActionReady = True   (Plant Simulation darf weiterlaufen)
-        """
-        self.plantsim.set_value(self.CELL_STATE_READY, False)
-        self.plantsim.set_value(self.CELL_ACTION, action)
-        self.plantsim.set_value(self.CELL_ACTION_READY, True)
-
-    def user_input(self, state):
-        """Fragt die Aktion interaktiv ab. 'q' beendet die Episode regulaer."""
-        print(f"\n  Zustand (inc, b1typ, b2typ): {state}")
+    def user_input(self, state_key):
+        """Fragt die Aktion interaktiv ab."""
+        print(f"\n  Zustand (inc, b1typ, b2typ): {state_key}")
         while True:
-            cmd = input(
-                "  Aktion [1=buffer1  2=buffer2  3=return  q=Episode beenden]: "
-            ).strip().lower()
+            cmd = input("  Aktion [1=buffer1  2=buffer2  3=return  q=Episode beenden]: ").strip().lower()
             if cmd == "q":
                 return None
             if cmd in ("1", "2", "3"):
                 return int(cmd)
-            print("  Ungueltige Eingabe.")
+            print("  Ungültige Eingabe.")
 
-    # ----------------------------------------------- Tabellen-Verwaltung
     def generate_default_table(self):
-        """
-        Generiert eine vollständige Reflex-Tabelle für alle 48 Zustände.
-        Regel:
-        1. Passt zu Puffer 1 (b1typ == inc) -> Aktion 1
-        2. Passt zu Puffer 2 (b2typ == inc) -> Aktion 2
-        3. Puffer 1 ist frei (b1typ == 0)   -> Aktion 1
-        4. Puffer 2 ist frei (b2typ == 0)   -> Aktion 2
-        5. Sonst (beide mit anderen Typen voll) -> Aktion 3 (Return)
-        """
+        """Generiert eine vollständige Reflex-Tabelle für alle 48 Zustände."""
         self.table = {}
         for inc in [1, 2, 3]:
             for b1typ in [0, 1, 2, 3]:
@@ -216,7 +151,6 @@ class Agent:
                     self.table[state] = act
 
     def load_table(self, path=None):
-        """Lädt die Nachschlagetabelle aus einer JSON-Datei."""
         filepath = path or self.json_path
         try:
             with open(filepath, "r", encoding="utf-8") as f:
@@ -224,16 +158,13 @@ class Agent:
 
             self.table = {}
             for key, val in data.items():
-                # Format: "Zustand (inc=1, b1typ=0, b2typ=2)" oder "(1, 0, 2)"
                 if "inc=" in key:
                     parts = key.replace("Zustand (inc=", "").replace("b1typ=", "").replace("b2typ=", "").replace(")", "").split(",")
                     state = (int(parts[0]), int(parts[1]), int(parts[2]))
                 else:
                     state = tuple(map(int, key.strip("()").split(",")))
 
-                # Wenn val ein Dict ist (z. B. aus vorherigem Speicherformat):
                 if isinstance(val, dict):
-                    # Nimm Aktion aus Key if vorhanden, sonst fallback
                     action = val.get("Aktion", val.get("action", 1))
                 else:
                     action = int(val)
@@ -246,7 +177,6 @@ class Agent:
             return False
 
     def save_table(self, path=None):
-        """Speichert die Reflex-Tabelle lesbar als JSON-Datei."""
         filepath = path or self.json_path
         readable_data = {}
         for (inc, b1, b2), act in sorted(self.table.items()):
@@ -258,7 +188,6 @@ class Agent:
         print(f"Reflex-Tabelle für {len(self.table)} Zustände gespeichert in '{filepath}'.")
 
     def print_table(self):
-        """Gibt die Nachschlagetabelle formatiert auf der Konsole aus."""
         print("\n=================== REFLEX TABELLE ===================")
         print(f"{'ZUSTAND (inc, b1, b2)':<25} | {'REFLEX AKTION':<15}")
         print("-" * 45)
@@ -267,8 +196,140 @@ class Agent:
             print(f"{str(state):<25} | {act_str:<15}")
         print("======================================================\n")
 
-    def reset(self):
-        """Setzt den Episodenzustand des Agenten zurueck."""
-        self.last_state = None
-        self.last_raw_state = None
-        self.last_action = None
+
+# =====================================================================
+# 3. TRAINING TEST AGENT (1:1 aus Vorlesungs-Vorlage)
+# =====================================================================
+class TrainingTestAgent(Agent):
+
+    def __init__(self, problem, q_table=None,
+                 q_table_file="q_table.npy"):
+        super().__init__(problem)
+        self.actions = problem.get_all_actions()
+        self.states = problem.get_all_states()
+        # A dict of dict with state and actions as keys q[s][a] = q-value
+        if q_table is not None:
+            self.q_table = q_table
+        else:
+            self.q_table = {}
+        self.file = q_table_file
+
+    def act(self):
+        # perception
+        s = self.problem.get_current_state().to_state()
+        # lookup in q_table
+        action = self.actions[np.argmax(self.q_table[s])]
+        return action
+
+    def train(self):
+        while True:
+            current_state = self.problem.get_current_state()
+            if self.problem.is_goal_state(current_state):
+                return
+
+            actions = self.problem.get_applicable_actions(current_state)
+            action = np.random.choice(actions)
+
+            # act
+            self.problem.act(action)
+
+    def save(self):
+        np.save(self.file, self.q_table)
+
+    def load(self):
+        self.q_table = np.load(self.file, allow_pickle='TRUE').item()
+
+
+# =====================================================================
+# 4. Q-LEARNING AGENT (1:1 aus Vorlesungs-Vorlage)
+# =====================================================================
+class QLearningAgent(Agent):
+
+    def __init__(self, problem, q_table=None, N_sa=None, gamma=0.99, max_N_exploration=100, R_Max=100):
+        super().__init__(problem)
+        self.actions = problem.get_all_actions()
+        self.states = problem.get_all_states()
+        if q_table is not None:
+            self.q_table = q_table
+        else:
+            self.q_table = np.zeros((len(self.states), (len(self.actions))))
+        if N_sa is not None:
+            self.N_sa = N_sa
+        else:
+            self.N_sa = np.zeros((len(self.states), (len(self.actions))))
+        self.gamma = gamma
+        self.max_N_exploration = max_N_exploration
+        self.R_Max = R_Max
+
+    def act(self):
+        # perception
+        current_state = self.problem.get_current_state()
+        s = self.states.index(current_state.to_state())
+        # lookup in q_table
+        action = self.actions[np.argmax(self.q_table[s])]
+        return action
+
+    def train(self, episodes=1000, alpha=0.1, max_steps=100):
+        
+        Steps_needed = np.zeros(episodes)
+
+        for episode in range(episodes):
+            self.problem.reset()  # Reset environment to initial state
+            current_state = self.problem.get_current_state()
+            
+            for step in range(max_steps):
+                s = self.states.index(current_state.to_state())
+                
+                # Calculate GLIE exploration function f(u, n)
+                f_values = np.zeros(len(self.actions))
+                # Assign R_Max to unexplored actions, otherwise use the current q-value
+                for a_idx in range(len(self.actions)):
+                    u = self.q_table[s, a_idx]
+                    n = self.N_sa[s, a_idx]
+                    if n < self.max_N_exploration:
+                        f_values[a_idx] = self.R_Max
+                    else:
+                        f_values[a_idx] = u
+                
+                # Choose action with the highest f(u,n) value; break ties randomly
+                max_f = np.max(f_values)
+                best_actions_indices = np.where(f_values == max_f)[0]
+                a_idx = np.random.choice(best_actions_indices)
+                action = self.actions[a_idx]
+                
+                # Execute action (environment transitions to the next state)
+                self.problem.act(action)
+                
+                # Read next state (s') and reward (r)
+                next_state = self.problem.get_current_state()
+                s_next = self.states.index(next_state.to_state())
+                reward = self.problem.get_reward(next_state)
+                
+                # Increment visit counter for this state-action pair
+                self.N_sa[s, a_idx] += 1
+                
+                # Update Q-value:
+                # Q(s,a) = Q(s,a) + alpha * [reward + gamma * max(Q(s_next)) - Q(s,a)]
+                best_next_q = np.max(self.q_table[s_next])
+                td_error = (reward + self.gamma * best_next_q) - self.q_table[s, a_idx]
+                self.q_table[s, a_idx] += alpha * td_error
+                
+                # Overwrite current state for the next step
+                current_state = next_state
+                
+                # End episode if the goal is reached (everything cleaned)
+                if self.problem.is_goal_state(current_state):
+                    Steps_needed[episode] = step
+                    break
+                
+                # Record max_steps if the goal wasn't reached within the limit
+                if step == max_steps - 1:
+                    Steps_needed[episode] = max_steps
+        
+        return Steps_needed
+
+    def save_q_table(self, file):
+        np.save(file, self.q_table)
+
+    def load_q_table(self, file):
+        self.q_table = np.load(file)
