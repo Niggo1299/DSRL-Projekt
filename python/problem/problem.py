@@ -44,27 +44,67 @@ def format_mm_ss(sim_seconds):
     return f"{minutes:02d}:{seconds:02d}"
 
 
+def get_relative_type(ptyp, inc, cnt):
+    """
+    Kategorisiert den Puffertyp relativ zum ankommenden Teil:
+    - 0: Leer (ptyp == 0 oder cnt == 0)
+    - 1: Match (ptyp == inc)
+    - 2: Dismatch (ptyp != inc und ptyp != 0)
+    """
+    if ptyp == 0 or cnt == 0:
+        return 0
+    elif ptyp == inc:
+        return 1
+    else:
+        return 2
+
+
+def get_fill_category(count):
+    """
+    Kategorisiert den Pufferfüllstand in 3 Stufen:
+    - 1: 0 bis 3 Teile (niedrig/leer)
+    - 2: 4 bis 6 Teile (mittel)
+    - 3: 7 bis 10 Teile (fast voll / voll)
+    """
+    if count <= 3:
+        return 1
+    elif count <= 6:
+        return 2
+    else:
+        return 3
+
+
 class State:
     """Repräsentiert einen konkreten Simulationszustand aus Plant Simulation."""
 
-    def __init__(self, inc, b1cnt, b1typ, b2cnt, b2typ, drain_total=0, sim_time=0.0):
+    def __init__(self, inc, b1cnt, b1typ, b2cnt, b2typ, lastcollect=0, drain_total=0, sim_time=0.0):
         self.inc = inc
         self.b1cnt = b1cnt
         self.b1typ = b1typ
         self.b2cnt = b2cnt
         self.b2typ = b2typ
+        self.lastcollect = lastcollect
         self.drain_total = drain_total
         self.sim_time = sim_time
         self.sim_time_str = format_mm_ss(sim_time)
 
     def to_state(self):
-        """Gibt das diskrete Zustandstupel (inc, b1typ, b2typ) zurück."""
-        return (self.inc, self.b1typ, self.b2typ)
+        """Gibt das 5er-Zustandstupel (b1rel, b2rel, b1cat, b2cat, lastcollect) mit 243 Zuständen zurück."""
+        b1rel = get_relative_type(self.b1typ, self.inc, self.b1cnt)
+        b2rel = get_relative_type(self.b2typ, self.inc, self.b2cnt)
+        b1cat = get_fill_category(self.b1cnt)
+        b2cat = get_fill_category(self.b2cnt)
+        return (b1rel, b2rel, b1cat, b2cat, self.lastcollect)
 
     def __repr__(self):
+        b1rel = get_relative_type(self.b1typ, self.inc, self.b1cnt)
+        b2rel = get_relative_type(self.b2typ, self.inc, self.b2cnt)
+        rel_map = {0: "Leer", 1: "Match", 2: "Dismatch"}
+        lc_map = {0: "Init", 1: "Collected", 2: "NotCollected"}
         return (
-            f"State(inc={self.inc}, B1=({self.b1cnt}x Typ {self.b1typ}), "
-            f"B2=({self.b2cnt}x Typ {self.b2typ}), Drain={self.drain_total}, Time={self.sim_time_str})"
+            f"State(inc={self.inc}, B1=({self.b1cnt}x Typ {self.b1typ}, {rel_map[b1rel]}, Kat={get_fill_category(self.b1cnt)}), "
+            f"B2=({self.b2cnt}x Typ {self.b2typ}, {rel_map[b2rel]}, Kat={get_fill_category(self.b2cnt)}), "
+            f"LastCollect={lc_map.get(self.lastcollect, self.lastcollect)}, Drain={self.drain_total}, Time={self.sim_time_str})"
         )
 
 
@@ -101,12 +141,18 @@ class PlantSimulationProblem:
         self.timeout = timeout
         self.last_state = None
 
-        # Erzeuge alle 48 diskreten Zustände
+        # Interner Speicher für das Gedächtnis (LastCollect)
+        self.mem_b1 = 0  # Letzter echter Typ in Puffer 1
+        self.mem_b2 = 0  # Letzter echter Typ in Puffer 2
+
+        # Erzeuge alle 243 diskreten Zustände (3 x 3 x 3 x 3 x 3)
         self.states = []
-        for inc in [1, 2, 3]:
-            for b1 in [0, 1, 2, 3]:
-                for b2 in [0, 1, 2, 3]:
-                    self.states.append((inc, b1, b2))
+        for b1rel in [0, 1, 2]:
+            for b2rel in [0, 1, 2]:
+                for b1cat in [1, 2, 3]:
+                    for b2cat in [1, 2, 3]:
+                        for lastcollect in [0, 1, 2]:
+                            self.states.append((b1rel, b2rel, b1cat, b2cat, lastcollect))
 
         # Aktionen: 1 = Puffer 1, 2 = Puffer 2, 3 = Return (Schleife)
         self.actions = [1, 2, 3]
@@ -116,7 +162,7 @@ class PlantSimulationProblem:
         return self.actions
 
     def get_all_states(self):
-        """Liefert die Liste aller 48 diskreten Zustände."""
+        """Liefert die Liste aller 243 diskreten Zustände."""
         return self.states
 
     def get_applicable_actions(self, current_state=None):
@@ -157,19 +203,42 @@ class PlantSimulationProblem:
             time.sleep(self.poll_interval)
 
     def get_current_state(self):
-        """Liest den aktuellen Zustand aus Plant Simulation."""
+        """Liest den aktuellen Zustand aus Plant Simulation und aktualisiert das Gedächtnis."""
         g1 = int(self.ps.get_value(self.CELL_G_STATE_1))
         g2 = int(self.ps.get_value(self.CELL_G_STATE_2))
         g3 = int(self.ps.get_value(self.CELL_G_STATE_3))
         raw_time = self.ps.get_value(self.CELL_G_TIME)
         sim_time = parse_plantsim_time(raw_time)
 
+        inc = int(self.ps.get_value(self.CELL_INC))
+        b1cnt = int(self.ps.get_value(self.CELL_B1_COUNT))
+        b1typ = int(self.ps.get_value(self.CELL_B1_TYPE))
+        b2cnt = int(self.ps.get_value(self.CELL_B2_COUNT))
+        b2typ = int(self.ps.get_value(self.CELL_B2_TYPE))
+
+        # --- UPDATE-REGEL FÜR INTERNEN SPEICHER (Gedächtnis) ---
+        # Der Speicher wird NUR aktualisiert, wenn ein echter Typ im Puffer liegt.
+        # Ein Leerlaufen des Puffers (Drain) löscht das Gedächtnis nicht!
+        if b1typ != 0 and b1cnt > 0:
+            self.mem_b1 = b1typ
+        if b2typ != 0 and b2cnt > 0:
+            self.mem_b2 = b2typ
+
+        # --- BERECHNUNG VON LASTCOLLECT ---
+        if self.mem_b1 == 0 and self.mem_b2 == 0:
+            lastcollect = 0  # 0 = Aufwärmphase (noch kein Puffer je belegt)
+        elif inc == self.mem_b1 or inc == self.mem_b2:
+            lastcollect = 1  # 1 = collected (Typ lag jüngst in Puffer 1 oder 2)
+        else:
+            lastcollect = 2  # 2 = notcollected (Typ lag jüngst NICHT in Puffern -> staut sich auf Schleife!)
+
         state = State(
-            inc=int(self.ps.get_value(self.CELL_INC)),
-            b1cnt=int(self.ps.get_value(self.CELL_B1_COUNT)),
-            b1typ=int(self.ps.get_value(self.CELL_B1_TYPE)),
-            b2cnt=int(self.ps.get_value(self.CELL_B2_COUNT)),
-            b2typ=int(self.ps.get_value(self.CELL_B2_TYPE)),
+            inc=inc,
+            b1cnt=b1cnt,
+            b1typ=b1typ,
+            b2cnt=b2cnt,
+            b2typ=b2typ,
+            lastcollect=lastcollect,
             drain_total=g1 + g2 + g3,
             sim_time=sim_time,
         )
@@ -195,7 +264,9 @@ class PlantSimulationProblem:
         self.wait_for_decision()
 
     def reset(self):
-        """Setzt die Simulation zurück und wartet auf den 1. Entscheidungspunkt."""
+        """Setzt die Simulation und den internen Speicher zurück."""
+        self.mem_b1 = 0
+        self.mem_b2 = 0
         self.ps.reset_simulation()
         self.ps.start_simulation()
         self.wait_for_decision()
@@ -207,19 +278,36 @@ class PlantSimulationProblem:
             return False
         return state.drain_total >= self.target_drain_count
 
-    def get_reward(self, next_state):
+    def get_reward(self, state, next_state):
         """
-        Reward-Funktion für Reinforcement Learning.
+        Reward-Funktion für Reinforcement Learning: R(s, s')
+        Berechnet die Belohnung anhand des Zustandsübergangs von state -> next_state.
         """
-        if self.last_state is None:
-            return 0.0
-
-        # Positiver Reward bei Zunahme produzierter Teile
-        drain_diff = next_state.drain_total - self.last_state.drain_total
-        if drain_diff > 0:
-            return 10.0 * drain_diff
-
-        # Zeitschritt-Kosten
-        return -0.1
+        reward = 0.0
+        # 1. Zielzustand noch nicht erreicht: kleiner Schritt-Abzug (fördert schnelles Lösen)
+        if not self.is_goal_state(next_state):
+            reward -= 1
+        # 2. Prüfen, ob Teile im Drain gelandet sind (Fortschritt/Durchsatz)
+        drain_diff = next_state.drain_total - state.drain_total
+        drain_flow = drain_diff > 0
+        if drain_flow:
+            reward += 100
+        # 3. Puffer-Füllstände prüfen
+        # Zunahme im Puffer (Teil erfolgreich zwischengespeichert)
+        if next_state.b1cnt > state.b1cnt:
+            reward += next_state.b1cnt
+        if next_state.b2cnt > state.b2cnt:
+            reward += next_state.b2cnt
+        # 4. Wenn kein Teil zum Drain geflossen ist, aber Teile aus Puffer verloren gingen
+        #    (Rückabwicklung der exakt angesammelten Gauß-Summe: n * (n + 1) / 2)
+        if not drain_flow:
+            if next_state.b1cnt < state.b1cnt:
+                n1 = state.b1cnt
+                reward -= (n1 * (n1 + 1)) // 2
+            if next_state.b2cnt < state.b2cnt:
+                n2 = state.b2cnt
+                reward -= (n2 * (n2 + 1)) // 2
+        return reward
+    
 
 

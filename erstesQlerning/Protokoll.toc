@@ -1,0 +1,10 @@
+\babel@toc {german}{}\relax 
+\contentsline {section}{\numberline {1}Ausgangslage und Zielsetzung}{2}{section.1}%
+\contentsline {section}{\numberline {2}Abdeckung des Zustandsraums}{2}{section.2}%
+\contentsline {paragraph}{Feststellung.}{2}{section*.3}%
+\contentsline {section}{\numberline {3}Was der Agent gelernt hat}{2}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Prioritätskette der Zuweisung}{2}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Nichttriviales Zusatzverhalten: gelerntes Opfer-Kriterium}{3}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Wertefunktion nutzt die Füllstandsdiskretisierung}{3}{subsection.3.3}%
+\contentsline {section}{\numberline {4}Was der Agent nicht gelernt hat}{4}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Fehlentscheidungen -- alle mit identischer Ursache}{4}{subsection.4.1}%

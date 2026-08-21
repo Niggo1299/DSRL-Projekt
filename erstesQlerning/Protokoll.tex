@@ -1,0 +1,250 @@
+\documentclass[11pt,a4paper]{article}
+
+% ---------- Kodierung & Sprache ----------
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[german]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{csquotes}
+
+% ---------- Layout ----------
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small Analyseprotokoll -- Q-Learning Lauf 1}
+\fancyhead[R]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ---------- Tabellen ----------
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{caption}
+\captionsetup{font=small,labelfont=bf}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{R}[1]{>{\raggedleft\arraybackslash}p{#1}}
+
+% ---------- Mathematik & Sonstiges ----------
+\usepackage{amsmath,amssymb}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+
+% ---------- Eigene Makros ----------
+\newcommand{\inc}{\texttt{inc}}
+\newcommand{\bit}{\texttt{b1typ}}
+\newcommand{\bzt}{\texttt{b2typ}}
+\newcommand{\bic}{\texttt{b1cat}}
+\newcommand{\bzc}{\texttt{b2cat}}
+\newcommand{\cat}{\texttt{cat}}
+\newcommand{\typ}{\texttt{typ}}
+\newcommand{\ok}{\textcolor{green!55!black}{$\checkmark$}}
+\newcommand{\nok}{\textcolor{red!75!black}{$\times$}}
+
+% ================================================================
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+{\Large\bfseries Analyseprotokoll\par}
+\vspace{0.5cm}
+{\LARGE\bfseries Q-Learning Lauf 1\par}
+\vspace{0.4cm}
+{\large Robotergestützte Sortierung auf zwei Puffer\par}
+\vspace{2.5cm}
+
+\begin{tabularx}{0.9\textwidth}{@{}lX@{}}
+\toprule
+\textbf{Gegenstand}      & Auswertung der Q-Tabelle des ersten tabellarischen
+                           Q-Learning-Trainings \\[2pt]
+\textbf{Anwendungsfall}  & Sortierung eingehender Teile auf zwei Puffer,
+                           Fehlläufer über Return-Loop \\[2pt]
+\textbf{Datenbasis}      & Q-Tabelle als CSV, 432 Zustände $\times$ 3 Aktionen \\[2pt]
+\textbf{Zustandsraum}    & $(\inc,\bit,\bzt,\bic,\bzc)$, erzeugt über
+                           verschachtelte Schleifen ($\inc$ außen, $\bzc$ innen) \\[2pt]
+\textbf{Aktionen}        & $A_0$ = Puffer 1, $A_1$ = Puffer 2, $A_2$ = Return-Loop \\[2pt]
+\textbf{Methode}         & Dekodierung des Zeilenindex, Soll-Ist-Vergleich der
+                           $\arg\max$-Policy gegen fachliche Regel,
+                           Monotonieprüfung der Wertefunktion \\[2pt]
+\textbf{Datum}           & 21.\,August 2026 \\
+\bottomrule
+\end{tabularx}
+
+\vfill
+\end{titlepage}
+
+\tableofcontents
+\clearpage
+
+% ================================================================
+\section{Ausgangslage und Zielsetzung}
+
+Ziel des Trainings war es, ohne vorgegebene Heuristik eine Zuweisungsstrategie zu
+erlernen, die eingehende Teile so auf zwei Puffer verteilt, dass möglichst viele
+vollständige 10er-Auslagerungen entstehen und die Return-Loop möglichst selten
+genutzt wird.
+
+Geprüft wurden drei Fragen:
+\begin{enumerate}[label=\arabic*.,leftmargin=*]
+  \item Hat der Agent eine fachlich sinnvolle Strategie gelernt?
+  \item Nutzt er die Diskretisierung der Füllstände ($\cat$) tatsächlich?
+  \item Welche Zustände sind unzureichend gelernt und warum?
+\end{enumerate}
+
+% ================================================================
+\section{Abdeckung des Zustandsraums}
+
+\begin{table}[htbp]
+\centering
+\caption{Aufteilung der 432 Tabellenzeilen nach Erreichbarkeit und Besuchsstatus}
+\begin{tabularx}{\textwidth}{@{}Xrrrl@{}}
+\toprule
+\textbf{Kategorie} & \textbf{Zust.} & \textbf{Anteil} &
+\textbf{Besucht} & \textbf{Bewertung} \\
+\midrule
+Strukturell unmöglich ($\typ=0 \wedge \cat>1$) & 132 & 30{,}6\,\% & 0
+  & korrekt, exakt $0{,}0$ \\
+Betriebsrelevant (Puffer leer / ungl.\ Typen)   & 219 & 50{,}7\,\% & 219 (100\,\%)
+  & vollständig gelernt \\
+Beide Puffer gleicher Typ                       &  81 & 18{,}8\,\% & 49 (60\,\%)
+  & $Q<66$, meist $<3$ \\
+\quad davon nie besucht                         &  32 &  7{,}4\,\% & 0
+  & --- \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\paragraph{Feststellung.}
+Der betriebsrelevante Teilraum ist zu 100\,\% erschlossen. Die Zustände
+\enquote{beide Puffer enthalten denselben Typ} treten unter der gelernten Policy
+praktisch nicht auf -- der Agent hat implizit gelernt, dass das Aufteilen eines
+Typs auf zwei Puffer beide Auslagerungen verzögert. Die geringe Abdeckung dieser
+81 Zustände ist damit ein \emph{Resultat der Policy, kein Trainingsmangel}.
+
+% ================================================================
+\section{Was der Agent gelernt hat}
+
+\subsection{Prioritätskette der Zuweisung}
+
+\begin{table}[htbp]
+\centering
+\caption{Soll-Ist-Vergleich der $\arg\max$-Policy über alle 216 trainierten Zustände}
+\begin{tabularx}{\textwidth}{@{}XL{3.6cm}rr@{}}
+\toprule
+\textbf{Situation} & \textbf{Korrekte Aktion} &
+\textbf{Treffer} & \textbf{Quote} \\
+\midrule
+$\inc = \bit$ (Match Puffer 1)      & Puffer 1            & 61 / 63 & \textbf{96{,}8\,\%} \\
+$\inc = \bzt$ (Match Puffer 2)      & Puffer 2            & 60 / 63 & \textbf{95{,}2\,\%} \\
+ein Puffer leer, anderer Fremdtyp   & leeren Puffer belegen & 33 / 36 & \textbf{91{,}7\,\%} \\
+beide belegt, kein Match            & Return              & 37 / 54 & 68{,}5\,\% \\
+beide leer                          & symmetrisch beliebig &  3 / 3  & --- \\
+\midrule
+\textbf{Gesamt}                     &                     & \textbf{194 / 216} & \textbf{88{,}4\,\%} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Der Agent hat die Regel \textbf{Match $\rightarrow$ freier Puffer $\rightarrow$
+Return} selbstständig und quasi-deterministisch gefunden.
+
+\subsection{Nichttriviales Zusatzverhalten: gelerntes Opfer-Kriterium}
+
+Die 17 Abweichungen in der Kategorie \enquote{beide belegt, kein Match} sind
+überwiegend keine Fehler. In 9 von 11 Fällen mit ungleichem Füllstand
+überschreibt der Agent gezielt den Puffer mit dem \emph{niedrigeren}
+$\cat$-Wert, statt die Return-Loop zu nutzen.
+
+\begin{table}[htbp]
+\centering
+\caption{Zustände mit gelerntem Opfer-Kriterium (fett: niedrigerer Füllstand)}
+\begin{tabular}{@{}rlll@{}}
+\toprule
+\textbf{Zeile} & \textbf{Zustand $(\inc,\bit,\bzt,\bic,\bzc)$} &
+\textbf{Aktion} & \textbf{Interpretation} \\
+\midrule
+101 & 1,\,2,\,3,\,\textbf{1},\,3 & Puffer 1 & opfert den fast leeren Puffer \\
+106 & 1,\,2,\,3,\,3,\,\textbf{1} & Puffer 2 & opfert den fast leeren Puffer \\
+128 & 1,\,3,\,2,\,\textbf{1},\,3 & Puffer 1 & dito \\
+129 & 1,\,3,\,2,\,2,\,\textbf{1} & Puffer 2 & dito \\
+212 & 2,\,\dots,\,\textbf{2},\,3 & Puffer 1 & dito \\
+347 & 3,\,\dots,\,\textbf{2},\,3 & Puffer 1 & dito \\
+348 & 3,\,1,\,2,\,3,\,\textbf{1} & Puffer 2 & dito \\
+375 & 3,\,2,\,1,\,3,\,\textbf{1} & Puffer 2 & dito \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Der Agent wägt also \textbf{Rückführkosten gegen Sortierfortschritt} ab -- ein
+Verhalten, das eine handgeschriebene \enquote{Match-first / sonst Return}-Heuristik
+nicht enthält. Werden diese 9 Fälle als sinnvoll gewertet, steigt die
+Policy-Qualität auf \textbf{92{,}6\,\%}.
+
+\subsection{Wertefunktion nutzt die Füllstandsdiskretisierung}
+
+\begin{table}[htbp]
+\centering
+\caption{$Q$-Wert der gewählten Aktion für $\inc=1$, $\bit=2$, $\bzt=1$
+         (Match auf Puffer 2, Zeilen 81--89)}
+\begin{tabular}{@{}cccc@{}}
+\toprule
+\multirow{2}{*}{$\bic$} & \multicolumn{3}{c}{$\bzc$} \\
+\cmidrule(l){2-4}
+ & \textbf{1} & \textbf{2} & \textbf{3} \\
+\midrule
+\textbf{1} & 605{,}3 & 625{,}4 & 659{,}6 \\
+\textbf{2} & 625{,}8 & 645{,}0 & 669{,}2 \\
+\textbf{3} & 641{,}7 & 669{,}2 & \textbf{690{,}1} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Die Werte steigen monoton in \emph{beiden} Füllständen. Daraus folgt:
+\begin{itemize}[leftmargin=*]
+  \item Der Füllstand des Zielpuffers wird korrekt als Nähe zur
+        10er-Auslagerung bewertet.
+  \item Auch der Füllstand des \emph{anderen} Puffers erhöht den Zustandswert
+        $\Rightarrow$ der Agent besitzt einen Fortschrittsbegriff für den
+        Gesamtzustand, nicht nur eine lokale Regel.
+  \item \textbf{Nachweis, dass die $\cat$-Features informativ genutzt werden}
+        und kein toter Ballast im Zustandsvektor sind.
+\end{itemize}
+
+Wertespanne der trainierten Zustände: $509{,}5$ (Zeile 180) bis $700{,}2$
+(Zeile 125). Return-$Q$-Werte liegen mit $511$--$687$ im gleichen Band; die
+Schleife wird als moderat teuer, nicht als katastrophal bewertet.
+
+% ================================================================
+\section{Was der Agent nicht gelernt hat}
+
+\subsection{Fehlentscheidungen -- alle mit identischer Ursache}
+\label{sec:fehler}
+
+\begin{table}[htbp]
+\centering
+\caption{Alle 8 Fehlentscheidungen der gelernten Policy}
+\begin{tabular}{@{}rlcrr@{}}
+\toprule
+\textbf{Zeile} & \textbf{Zustand $(\inc,\bit,\bzt,\bic,\bzc)$} &
+\textbf{Gewählt} & \textbf{$Q$ gewählt} & \textbf{$Q$ korrekt} \\
+\midrule
+ 29 & 1,\,0,\,3,\,1,\,\textbf{3} & Return   & 606{,}3 & P1 = \textbf{0{,}00} \\
+173 & 2,\,0,\,3,\,1,\,\textbf{3} & Return   & 612{,}1 & P1 = 0{,}26 \\
+299 & 3,\,0,\,1,\,1,\,\textbf{3} & Return   & 627{,}3 & P1 = 0{,}05 \\
+245 & 2,\,2,\,3,\,1,\,\textbf{3} & Return   & 624{,}7 & P1 = 0{,}73 \\
+ 61 & 1,\,1,\,2,\,\textbf{3},\,2 & Puffer 2 & 544{,}0 & P1 = 2{,}14 \\
+353 & 3,\,1,\,3,\,1,\,\textbf{3} & Puffer 1 & 611{,}0 & P2 = 9{,}59 \\
+356 & 3,\,1,\,3,\,2,\,\textbf{3} & Puffer 1 & 607{,}7 & P2 = 2{,}05 \\
+359 & 3,\,1,\,3,\,3,\,\textbf{3} & Puffer 1 & 598{,}1 & P2 = 13{,}50 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\end{document}

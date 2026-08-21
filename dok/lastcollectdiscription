@@ -1,0 +1,60 @@
+LASTCOLLECT - Zustandsbeschreibung
+==================================
+
+INTERNER SPEICHER
+-----------------
+Zwei Slots, einer pro Puffer:
+  intern[1] = letzter echter Typ, der in Puffer 1 lag
+  intern[2] = letzter echter Typ, der in Puffer 2 lag
+
+Gespeichert wird der absolute Typ (Typ 1, Typ 2, Typ 3, ...),
+nicht eine Relation. Startwert: leer / undefiniert.
+
+
+UPDATE-REGEL (pro Puffer unabhaengig)
+-------------------------------------
+Puffer i wechselt auf einen Typ x   ->  intern[i] = x
+Puffer i wechselt auf leer (Drain)  ->  intern[i] bleibt unveraendert
+Puffer i behaelt seinen Typ         ->  intern[i] bleibt unveraendert
+
+Kernpunkt: Der Speicher wird NUR bei einem Wechsel auf einen
+echten Typ aktualisiert. Ein Leerlaufen des Puffers loescht das
+Gedaechtnis nicht.
+
+
+AUSGABE (jeden Schritt neu berechnet)
+-------------------------------------
+Eingang: p = Typ des Teils, das der Roboter aktuell haelt
+
+  0 = Aufwaermphase
+      wenn intern[1] und intern[2] beide noch undefiniert sind
+
+  1 = collected
+      wenn p gleich intern[1] oder gleich intern[2] ist
+
+  2 = notcollected
+      in allen anderen Faellen
+
+
+BEDEUTUNG
+---------
+Leitfrage: War der Typ, den ich gerade am Roboter halte, einer
+der beiden Typen, die zuletzt in den Puffern lagen?
+
+  1 -> Dieser Typ wurde juengst gesammelt.
+  2 -> Dieser Typ wurde juengst NICHT gesammelt. Er ist also
+       zuletzt in die Rueckfuehrschleife gegangen und kommt
+       vermutlich gehaeuft wieder.
+
+
+VERHAELTNIS ZU t1 / t2
+----------------------
+Solange beide Puffer belegt sind, gilt intern[i] = aktueller
+Puffertyp. lastcollect ist dann vollstaendig aus t1/t2
+ableitbar und erzeugt keine neuen Zustaende.
+
+Neue Information entsteht nur, wenn mindestens ein Puffer leer
+ist: dann traegt der Speicher die Vorgeschichte, die t1/t2
+nicht mehr enthalten.
+
+lastcollect ersetzt t1/t2 also nicht, sondern ergaenzt sie.

@@ -12,6 +12,7 @@ import os
 import json
 import cProfile
 import numpy as np
+from problem.problem import SimulationFailedError
 
 
 # =====================================================================
@@ -72,7 +73,7 @@ class ReflexAgent(Agent):
     Liest Aktionen für Zustände (inc, b1typ, b2typ) aus einer Nachschlagetabelle (q_table.json).
     """
 
-    def __init__(self, problem, json_file="q_table.json", manual_control=False):
+    def __init__(self, problem, json_file="q_table_reflex.json", manual_control=False):
         super().__init__(problem)
         self.actions = problem.get_all_actions()
         self.manual_control = manual_control
@@ -94,7 +95,7 @@ class ReflexAgent(Agent):
     def act(self):
         """Wählt die Aktion für den aktuellen Zustand aus."""
         current_state = self.problem.get_current_state()
-        state_key = current_state.to_state()
+        state_key = (current_state.inc, current_state.b1typ, current_state.b2typ)
 
         if self.manual_control:
             return self.user_input(state_key)
@@ -108,7 +109,7 @@ class ReflexAgent(Agent):
 
     def _fallback_rule(self, state_key):
         """Experten-Reflexregel als Fallback."""
-        inc, b1typ, b2typ = state_key
+        inc, b1typ, b2typ = state_key[:3]
         if b1typ == inc:
             return 1
         elif b2typ == inc:
@@ -198,46 +199,44 @@ class ReflexAgent(Agent):
 
 
 # =====================================================================
-# 3. TRAINING TEST AGENT (1:1 aus Vorlesungs-Vorlage)
+# 3. TRAINING TEST AGENT
 # =====================================================================
 class TrainingTestAgent(Agent):
 
-    def __init__(self, problem, q_table=None,
-                 q_table_file="q_table.npy"):
+    def __init__(self, problem, q_table=None, q_table_file="q_table.npy"):
         super().__init__(problem)
         self.actions = problem.get_all_actions()
         self.states = problem.get_all_states()
-        # A dict of dict with state and actions as keys q[s][a] = q-value
+        self.file = q_table_file
+
         if q_table is not None:
             self.q_table = q_table
         else:
-            self.q_table = {}
-        self.file = q_table_file
+            self.load()
 
     def act(self):
         # perception
-        s = self.problem.get_current_state().to_state()
-        # lookup in q_table
-        action = self.actions[np.argmax(self.q_table[s])]
-        return action
-
-    def train(self):
-        while True:
-            current_state = self.problem.get_current_state()
-            if self.problem.is_goal_state(current_state):
-                return
-
-            actions = self.problem.get_applicable_actions(current_state)
-            action = np.random.choice(actions)
-
-            # act
-            self.problem.act(action)
+        current_state = self.problem.get_current_state()
+        s_idx = self.states.index(current_state.to_state())
+        # lookup best action in q_table
+        action_idx = int(np.argmax(self.q_table[s_idx]))
+        return self.actions[action_idx]
 
     def save(self):
         np.save(self.file, self.q_table)
 
     def load(self):
-        self.q_table = np.load(self.file, allow_pickle='TRUE').item()
+        filepath = self.file
+        if not os.path.exists(filepath):
+            # Fallback search in project root
+            agent_dir = os.path.dirname(os.path.abspath(__file__))
+            proj_dir = os.path.dirname(os.path.dirname(agent_dir))
+            candidate = os.path.join(proj_dir, self.file)
+            if os.path.exists(candidate):
+                filepath = candidate
+
+        self.q_table = np.load(filepath)
+        print(f"[TEST AGENT] Q-Tabelle erfolgreich geladen aus '{filepath}' (Shape: {self.q_table.shape}).")
 
 
 # =====================================================================
@@ -245,7 +244,7 @@ class TrainingTestAgent(Agent):
 # =====================================================================
 class QLearningAgent(Agent):
 
-    def __init__(self, problem, q_table=None, N_sa=None, gamma=0.99, max_N_exploration=100, R_Max=100):
+    def __init__(self, problem, q_table=None, N_sa=None, gamma=0.99, max_N_exploration=3, R_Max=100):
         super().__init__(problem)
         self.actions = problem.get_all_actions()
         self.states = problem.get_all_states()
@@ -269,7 +268,13 @@ class QLearningAgent(Agent):
         action = self.actions[np.argmax(self.q_table[s])]
         return action
 
-    def train(self, episodes=1000, alpha=0.1, max_steps=100):
+    def train(self, episodes=1000, alpha=0.1, max_steps=100, gamma=None, max_N_exploration=None, R_Max=None):
+        if gamma is not None:
+            self.gamma = gamma
+        if max_N_exploration is not None:
+            self.max_N_exploration = max_N_exploration
+        if R_Max is not None:
+            self.R_Max = R_Max
         
         Steps_needed = np.zeros(episodes)
 
@@ -298,28 +303,51 @@ class QLearningAgent(Agent):
                 action = self.actions[a_idx]
                 
                 # Execute action (environment transitions to the next state)
-                self.problem.act(action)
+                try:
+                    self.problem.act(action)
+                    next_state = self.problem.get_current_state()
+                    s_next = self.states.index(next_state.to_state())
+                    reward = self.problem.get_reward(current_state, next_state)
+                except SimulationFailedError as e:
+                    print(f"  [STAU / TIMEOUT] Episode {episode + 1} bei Step {step + 1} abgebrochen: {e}")
+                    print("  -> Setze Simulation zurueck und starte naechste Episode...")
+                    Steps_needed[episode] = max_steps
+                    break
                 
-                # Read next state (s') and reward (r)
-                next_state = self.problem.get_current_state()
-                s_next = self.states.index(next_state.to_state())
-                reward = self.problem.get_reward(next_state)
-                
-                # Increment visit counter for this state-action pair
+                # 1. Normales Q-Update für (s, a)
                 self.N_sa[s, a_idx] += 1
-                
-                # Update Q-value:
-                # Q(s,a) = Q(s,a) + alpha * [reward + gamma * max(Q(s_next)) - Q(s,a)]
                 best_next_q = np.max(self.q_table[s_next])
                 td_error = (reward + self.gamma * best_next_q) - self.q_table[s, a_idx]
                 self.q_table[s, a_idx] += alpha * td_error
+
+                # 2. Symmetrisches Q-Update für (s_sym, a_sym) - gespiegelte Puffer
+                s_cur = self.states[s]           # (b1rel, b2rel, b1cat, b2cat)
+                s_nxt = self.states[s_next]      # (b1rel', b2rel', b1cat', b2cat')
+
+                # Puffer 1 und Puffer 2 vertauschen:
+                s_sym = (s_cur[1], s_cur[0], s_cur[3], s_cur[2])
+                s_nxt_sym = (s_nxt[1], s_nxt[0], s_nxt[3], s_nxt[2])
+
+                # Aktion spiegeln (1 <-> 2, 3 bleibt 3):
+                a_sym = 2 if action == 1 else (1 if action == 2 else 3)
+                a_sym_idx = self.actions.index(a_sym)
+                s_sym_idx = self.states.index(s_sym)
+                s_nxt_sym_idx = self.states.index(s_nxt_sym)
+
+                # Gespiegelten Q-Wert updaten (nur wenn nicht identischer Zustand):
+                if s_sym_idx != s or a_sym_idx != a_idx:
+                    self.N_sa[s_sym_idx, a_sym_idx] += 1
+                    best_next_q_sym = np.max(self.q_table[s_nxt_sym_idx])
+                    td_error_sym = (reward + self.gamma * best_next_q_sym) - self.q_table[s_sym_idx, a_sym_idx]
+                    self.q_table[s_sym_idx, a_sym_idx] += alpha * td_error_sym
                 
                 # Overwrite current state for the next step
                 current_state = next_state
                 
                 # End episode if the goal is reached (everything cleaned)
                 if self.problem.is_goal_state(current_state):
-                    Steps_needed[episode] = step
+                    Steps_needed[episode] = step + 1
+                    print(f"  [ERFOLG] Episode {episode + 1} abgeschlossen in {step + 1} Schritten (Drain={current_state.drain_total}, Zeit={current_state.sim_time_str})")
                     break
                 
                 # Record max_steps if the goal wasn't reached within the limit

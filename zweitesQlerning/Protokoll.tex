@@ -1,0 +1,424 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[ngerman]{babel}
+\usepackage[a4paper,margin=2.4cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage[hidelinks]{hyperref}
+
+% Spaltentypen
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+\newcolumntype{C}{>{\centering\arraybackslash}X}
+\newcolumntype{r}{>{\raggedleft\arraybackslash}p{1.9cm}}
+
+% Kopf-/Fusszeile
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small Q-Learning -- Analyseprotokoll Lauf 2}
+\fancyhead[R]{\small Symmetrienutzung}
+\fancyfoot[C]{\small\thepage}
+
+% Statusmarker
+\newcommand{\ok}{\textcolor{green!55!black}{\textbf{ok}}}
+\newcommand{\bad}{\textcolor{red!75!black}{\textbf{Fehler}}}
+\newcommand{\offen}{\textcolor{orange!85!black}{\textbf{offen}}}
+
+\title{\textbf{Analyseprotokoll Lauf 2}\\[0.35em]
+\large Tabellarisches Q-Learning zur robotergestützten Sortierung\\
+\large mit Ausnutzung der Puffersymmetrie}
+\author{Niko \\ \small Diskrete Simulation und Reinforcement Learning}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{fancy}
+
+\begin{abstract}
+\noindent
+Dieses Protokoll dokumentiert den zweiten Trainingslauf des tabellarischen
+Q-Learning-Agenten für die Sortierung eingehender Teile auf zwei Puffer mit
+Return-Loop. Gegenüber Lauf 1 wurde ausschließlich die Maßnahme M4
+(Ausnutzung der Puffersymmetrie) umgesetzt. Die Symmetrie ist bit-exakt
+korrekt implementiert; die Zahl der unterschiedlichen Fehlerlogiken sinkt von
+acht auf fünf, und alle vier explizit dokumentierten Fehlerzeilen aus Lauf 1
+sind behoben. Das Explorationsdefizit (M1--M3) wurde nicht adressiert und
+äußert sich in Lauf 2 an neuen, teils gravierenderen Stellen. Als neuer
+Hauptbefund wird die weiterhin ungenutzte \emph{Typ}-Symmetrie
+identifiziert.
+\end{abstract}
+
+\tableofcontents
+\bigskip
+
+%======================================================================
+\section{Zielsetzung und Änderungen gegenüber Lauf 1}
+%======================================================================
+
+Ziel von Lauf 2 war die Überprüfung der Wirksamkeit von Maßnahme M4 aus dem
+Protokoll zu Lauf 1: die Ausnutzung der strukturellen Symmetrie der beiden
+Puffer. Die Spiegelung ist definiert als der gleichzeitige Tausch von
+\[
+  (b1typ,\,b1cat) \;\longleftrightarrow\; (b2typ,\,b2cat)
+  \qquad\text{und}\qquad
+  \texttt{Action\_0} \;\longleftrightarrow\; \texttt{Action\_1}.
+\]
+
+\begin{table}[htbp]
+\centering
+\caption{Umsetzungsstand der in Lauf 1 empfohlenen Maßnahmen}
+\label{tab:massnahmen-status}
+\begin{tabularx}{\textwidth}{@{}clLc@{}}
+\toprule
+\textbf{Nr.} & \textbf{Maßnahme} & \textbf{Zweck} & \textbf{Status} \\
+\midrule
+M1 & Optimistische $Q$-Initialisierung & Erzwingt Erstbesuch aller Aktionen & \offen \\
+M2 & $\varepsilon$-Minimum & Verhindert vollständigen Explorationsstopp & \offen \\
+M3 & UCB / Besuchszähler & Gezielte Exploration seltener Zustände & \offen \\
+M4 & Puffersymmetrie & Halbierung der zu lernenden Klassen & \ok \\
+M5 & Kompaktere Zustandskodierung & Eliminiert unmögliche Zustände & \offen \\
+M6 & Nächster Ankunftstyp im Zustand & Ermöglicht Lookahead & \offen \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\noindent
+Reward-Design, Diskontfaktor und Zustandsdimension blieben unverändert. Die
+Q-Tabelle umfasst weiterhin $432$ Zustände $\times$ $3$ Aktionen
+(Puffer~1, Puffer~2, Return-Loop).
+
+%======================================================================
+\section{Verifikation der Symmetrieimplementierung}
+%======================================================================
+
+\subsection{Spiegelpaare}
+
+Für Spiegelpaare muss der $Q$-Wert der jeweils gewählten Aktion exakt
+übereinstimmen. Tabelle~\ref{tab:spiegelpaare} zeigt eine repräsentative
+Stichprobe.
+
+\begin{table}[htbp]
+\centering
+\caption{Stichprobe der Spiegelpaare, Zustand als $(inc,\,b1typ,\,b2typ,\,b1cat,\,b2cat)$}
+\label{tab:spiegelpaare}
+\small
+\begin{tabular}{@{}llr lr c@{}}
+\toprule
+\textbf{Paar} & \textbf{Zustand} & \textbf{$Q$ gewählt} &
+\textbf{Gespiegelt} & \textbf{$Q$ gewählt} & \textbf{Status} \\
+\midrule
+9 / 36    & (1,0,1,1,1) & 417,64688454714667 & (1,1,0,1,1) & 417,64688454714667 & \ok \\
+54 / 81   & (1,1,2,1,1) & 412,9399113166976  & (1,2,1,1,1) & 412,9399113166976  & \ok \\
+99 / 126  & (1,2,3,1,1) & 402,826410225901   & (1,3,2,1,1) & 402,826410225901   & \ok \\
+359 / 413 & (3,1,3,3,3) & 510,6411597942206  & (3,3,1,3,3) & 510,6411597942206  & \ok \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Selbstsymmetrische Zustände}
+
+Zustände mit $b1typ = b2typ$ \emph{und} $b1cat = b2cat$ sind zu sich selbst
+symmetrisch; für sie muss
+$Q(s,\texttt{Action\_0}) = Q(s,\texttt{Action\_1})$ gelten. Dies ist in
+Lauf 2 durchgängig erfüllt für die Zeilen
+\[
+  0,\;45,\;90,\;135,\;242,\;279,\;283,\;333,\;378,\;386,\;423 .
+\]
+In Lauf 1 wählten die Leerzustände $0$, $144$ und $288$ noch widersprüchlich
+Puffer~2, Puffer~1 und Puffer~1. Diese Inkonsistenz ist behoben.
+
+\begin{center}
+\fbox{\parbox{0.93\textwidth}{\textbf{Bewertung:} Maßnahme M4 ist
+vollständig und fehlerfrei umgesetzt. Effektiv mussten nur
+\textbf{111 Symmetrieklassen} statt 219 betriebsrelevanter Zustände gelernt
+werden; die Sample-Effizienz verdoppelt sich damit rechnerisch.}}
+\end{center}
+
+%======================================================================
+\section{Abdeckung des Zustandsraums}
+%======================================================================
+
+\begin{table}[htbp]
+\centering
+\caption{Aufteilung der 432 Zeilen der Q-Tabelle}
+\label{tab:abdeckung}
+\begin{tabularx}{\textwidth}{@{}Lrrl@{}}
+\toprule
+\textbf{Kategorie} & \textbf{Zustände} & \textbf{Anteil} & \textbf{Status} \\
+\midrule
+Strukturell unmöglich ($typ=0 \wedge cat>1$) & 132 & 30,6\,\% & alle exakt $0{,}0$ -- korrekt \\
+Betriebsrelevant                             & 219 & 50,7\,\% & 100\,\% trainiert, $Q \approx 387\ldots511$ \\
+Beide Puffer gleicher Typ                    &  81 & 18,8\,\% & untrainiert, alle $Q < 81$ \\
+\quad davon nie besucht                      &  28 &  6,5\,\% & exakt $0{,}0$ \\
+\midrule
+\textbf{Summe}                               & \textbf{432} & \textbf{100\,\%} & \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\noindent
+Die 132 unmöglichen Zeilen existieren weiterhin, da Maßnahme M5 nicht
+umgesetzt wurde. Sie belegen unverändert $30{,}6\,\%$ des Speichers, ohne
+Information zu tragen.
+
+%======================================================================
+\section{Qualität der gelernten Policy}
+%======================================================================
+
+\begin{table}[htbp]
+\centering
+\caption{Trefferquoten nach Entscheidungssituation, Lauf 2 gegen Lauf 1}
+\label{tab:policy}
+\small
+\begin{tabularx}{\textwidth}{@{}LlrrR{}}
+\toprule
+\textbf{Situation} & \textbf{Korrekte Aktion} & \textbf{Treffer} &
+\textbf{Quote} & \textbf{Lauf 1} \\
+\midrule
+Beide Puffer leer & symmetrisch & 3 / 3 & --- & inkonsistent \\
+Ein Puffer leer, anderer = $inc$ (Match) & Match-Puffer & 18 / 18 & \textbf{100,0\,\%} & 95--97\,\% \\
+Ein Puffer leer, anderer Fremdtyp & leeren Puffer belegen & 32 / 36 & 88,9\,\% & 91,7\,\% \\
+Beide belegt, ein Match & Match-Puffer & 102 / 108 & 94,4\,\% & $\approx$ 96\,\% \\
+Beide belegt, kein Match (strikt) & Return & 34 / 54 & 63,0\,\% & 68,5\,\% \\
+\quad dito, Opfern als valide gewertet & --- & 54 / 54 & \textbf{100,0\,\%} & 9 von 11 \\
+\midrule
+\textbf{Gesamt, strikte Bewertung} & & \textbf{189 / 219} & \textbf{86,3\,\%} & 88,4\,\% \\
+\textbf{Gesamt, mit Opfer-Toleranz} & & \textbf{209 / 219} & \textbf{95,4\,\%} & 92,6\,\% \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection*{Interpretation}
+
+\begin{itemize}[leftmargin=1.4em]
+  \item Der \textbf{Match-Vorrang bei leerem Gegenpuffer} ist mit
+        $100\,\%$ vollständig gelernt.
+  \item Das \textbf{Opfer-Kriterium} ist nun strikt konsistent: In allen
+        20 Opferentscheidungen wird ausnahmslos der \emph{weniger} gefüllte
+        Puffer überschrieben, nie der vollere. In Lauf 1 galt dies nur in
+        9 von 11 Fällen.
+  \item Die \textbf{strikte Gesamtquote sinkt} leicht von $88{,}4\,\%$ auf
+        $86{,}3\,\%$. Dies ist ein Artefakt der Symmetrie: Fehler treten
+        zwangsläufig paarweise auf und werden auf Zustandsebene doppelt
+        gezählt, obwohl es sich um dieselbe Entscheidungslogik handelt.
+        Die tolerante Quote steigt gleichzeitig von $92{,}6\,\%$ auf
+        $95{,}4\,\%$.
+\end{itemize}
+
+%======================================================================
+\section{Verbleibende Fehlerklassen}
+%======================================================================
+
+\begin{table}[htbp]
+\centering
+\caption{Die fünf verbleibenden Fehlerlogiken (je zwei gespiegelte Zeilen)}
+\label{tab:fehler}
+\small
+\begin{tabular}{@{}llrlr@{}}
+\toprule
+\textbf{Klasse} & \textbf{Zustand (Spiegel)} & \textbf{Gewählt} &
+\textbf{$Q$ gewählt} & \textbf{Korrekt / $Q$ korrekt} \\
+\midrule
+K1 & 20 / 78 \; (1,0,2,1,\textbf{3})            & Return & 445,01 & P1 \; / \; \textbf{0,092} \\
+K2 & 298 / 327 \; (3,0,1,1,2)                   & Return & 421,93 & P1 \; / \; \textbf{$-0{,}035$} \\
+K3 & 200 / 231 \; (2,1,2,1,\textbf{3})          & P1     & 420,59 & P2 (Match!) \; / \; \textbf{2,198} \\
+K4 & 206 / 233 \; (2,1,2,\textbf{3},\textbf{3}) & Return & 448,08 & P2 (Match!) \; / \; \textbf{2,042} \\
+K5 & 251 / 278 \; (2,2,\textbf{3},\textbf{3},\textbf{3}) & P2 & 423,17 & P1 (Match!) \; / \; \textbf{3,671} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Diagnose}
+
+In allen fünf Klassen liegt der $Q$-Wert der korrekten Aktion unter $4$,
+entspricht also null bis zwei Besuchen. Der \texttt{argmax} entscheidet
+damit gegen praktisch uninitialisierte Werte. Vier der fünf Klassen
+enthalten die seltene Füllstandskategorie $cat=3$. Die Ursache ist somit
+\textbf{unverändert ein Explorations- und $\varepsilon$-Decay-Problem} und
+\emph{kein} Reward- oder Regelproblem.
+
+\subsection{Verschärfung gegenüber Lauf 1}
+
+Die Fehler haben ihre Qualität verändert:
+
+\begin{itemize}[leftmargin=1.4em]
+  \item In \textbf{Lauf 1} lagen alle acht Fehler in der ökonomisch
+        günstigeren Kategorie „leerer Puffer versus Return``.
+  \item In \textbf{Lauf 2} betreffen K3--K5 nun \emph{Match-Zustände mit}
+        $cat=3$. In K5 überschreibt der Agent einen zu etwa $90\,\%$
+        gefüllten Fremdpuffer, statt seinen eigenen nahezu vollständigen
+        Stapel zu vollenden. Das kostet zwei Auslagerungen statt keiner.
+\end{itemize}
+
+\noindent
+Die alten Fehlerzeilen 29, 61, 173 und 299 aus Lauf 1 sind sämtlich
+korrigiert. Die Zahl der unterschiedlichen Fehlerlogiken sinkt von
+\textbf{8 auf 5}.
+
+%======================================================================
+\section{Neuer Hauptbefund: ungenutzte Typ-Symmetrie}
+%======================================================================
+
+Die \emph{Puffer} sind nach M4 symmetrisch, die \emph{Typ-Labels} jedoch
+nicht. Funktional identische Situationen werden weiterhin sechsfach
+getrennt gelernt.
+
+\begin{table}[htbp]
+\centering
+\caption{Sechs funktional identische Zustände: Match bei $cat=1$, Fremdpuffer $cat=1$}
+\label{tab:typredundanz}
+\begin{tabularx}{0.82\textwidth}{@{}rLr@{}}
+\toprule
+\textbf{Zustand} & \textbf{Bedeutung} & \textbf{$Q$ (Match-Aktion)} \\
+\midrule
+54  & Match $cat=1$, Fremd $cat=1$ & 412,94 \\
+63  & dito & 430,95 \\
+225 & dito & 402,16 \\
+243 & dito & 404,65 \\
+405 & dito & 434,26 \\
+414 & dito & 407,67 \\
+\midrule
+\multicolumn{2}{@{}l}{\textbf{Spannweite}} & \textbf{402--434 ($\approx 8\,\%$)} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\noindent
+Bei $cat=3$ wird die Streuung kritisch: Die Werte lauten
+$494{,}85$, $496{,}70$, $510{,}64$ und $440{,}79$ -- und zwei der sechs
+Fälle (K4, K5) sind vollständig falsch gelernt. Inhaltlich zeigt sich die
+Redundanz ebenso: Zustand 105 $(3,2,3,3,1)$ opfert korrekt den
+$cat=1$-Puffer, der typgleiche Fall 348 $(3,1,2,3,1)$ wählt hingegen Return.
+
+\subsection{Lösungsvorschlag: relative Kodierung}
+
+Eine relative Kodierung je Puffer über
+$\{\text{leer},\,\text{match},\,\text{mismatch}\} \times cat$
+reduziert den Zustandsraum auf $7 \times 7 = 49$ und mit Puffersymmetrie auf
+\textbf{28 Klassen}. Sowohl $inc$ als auch die Typ-Labels entfallen
+vollständig, und die Daten aller sechs Blöcke werden gepoolt. Bei etwa
+sechsfacher effektiver Datenmenge pro Klasse ist die Beseitigung von
+K3--K5 mit hoher Wahrscheinlichkeit zu erwarten.
+
+%======================================================================
+\section{Struktur der Wertefunktion}
+%======================================================================
+
+\begin{table}[htbp]
+\centering
+\caption{$Q$-Werte der gewählten Aktion, Zustände 351--359
+($inc=3$, $b1typ=1$, $b2typ=3$, Match auf Puffer 2)}
+\label{tab:wertefunktion}
+\begin{tabular}{@{}c rrr@{}}
+\toprule
+$b1cat \,\backslash\, b2cat$ & \textbf{1} & \textbf{2} & \textbf{3} \\
+\midrule
+\textbf{1} & 434,26 & 462,30 & 492,39 \\
+\textbf{2} & 452,33 & 472,78 & 496,32 \\
+\textbf{3} & 469,14 & 483,14 & \textbf{510,64} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent
+Die Werte sind streng monoton steigend in \emph{beiden} Füllständen und
+damit sauberer als in Lauf 1, wo Dubletten wie $669{,}2$ auftraten. Die
+Füllstandsmerkmale werden also nachweislich informativ genutzt. In anderen
+Blöcken (etwa 54--62) ist die Monotonie allerdings nur bezüglich des
+\emph{Zielpuffers} stabil, bezüglich des Gegenpuffers verrauscht.
+
+\medskip\noindent
+\textbf{Unverändert problematisch:} Die nicht gewählten Aktionen liegen bei
+$-0{,}1 \ldots -2$ und tragen keine Information. Es existiert weiterhin
+\textbf{keine verwertbare zweitbeste Aktion}, was Fallback-Strategien und
+Policy-Robustheitsanalysen unmöglich macht.
+
+%======================================================================
+\section{Auffälligkeit: Absenkung des \texorpdfstring{$Q$}{Q}-Niveaus}
+%======================================================================
+
+\begin{table}[htbp]
+\centering
+\caption{Vergleich der absoluten $Q$-Niveaus}
+\label{tab:qniveau}
+\begin{tabularx}{0.85\textwidth}{@{}Lrrr@{}}
+\toprule
+ & \textbf{Lauf 1} & \textbf{Lauf 2} & \textbf{Verhältnis} \\
+\midrule
+Maximum              & 700,2 & 510,64 & 72,9\,\% \\
+Minimum (trainiert)  & 509,5 & 386,87 & 75,9\,\% \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\noindent
+Bei identischem Reward-Design und identischer Episodenzahl müsste die
+Symmetrienutzung die Werte \emph{schneller} konvergieren lassen, nicht auf
+etwa $73\,\%$ absenken.
+
+\begin{center}
+\fbox{\parbox{0.93\textwidth}{\textbf{Offene Frage:} Wurden Reward,
+$\gamma$, Episodenzahl oder Episodenlänge mitverändert? Falls nicht, deutet
+das Niveau auf eine \emph{unterkonvergierte} Wertefunktion hin. In diesem
+Fall sind die Quoten in Tabelle~\ref{tab:policy} als untere Schranke zu
+lesen.}}
+\end{center}
+
+%======================================================================
+\section{Maßnahmen für Lauf 3}
+%======================================================================
+
+\begin{table}[htbp]
+\centering
+\caption{Priorisierte Maßnahmenliste}
+\label{tab:massnahmen3}
+\begin{tabularx}{\textwidth}{@{}clLl@{}}
+\toprule
+\textbf{Nr.} & \textbf{Maßnahme} & \textbf{Bezug} & \textbf{Priorität} \\
+\midrule
+M1 & Optimistische Initialisierung $Q_0 \approx 520$ & K1--K5 & \textbf{hoch} \\
+M2 & $\varepsilon_{\min} = 0{,}05$ statt vollständigem Decay & K1--K5 & \textbf{hoch} \\
+M3 & Besuchszählbasierte Exploration (UCB) & K3--K5 & \textbf{hoch} \\
+M8 & Relative Typkodierung $\{$leer, match, mismatch$\}$ & Abschnitt 6 & \textbf{hoch} \\
+M5 & $cat=0$ für leere Puffer & 132 Leerzeilen & mittel \\
+M7 & Besuchszähler mitloggen & Auswertbarkeit & mittel \\
+M6 & Nächsten Ankunftstyp in den Zustand & Return vs. Opfer & niedrig \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\noindent
+Maßnahme M4 ist erledigt und muss nicht erneut angefasst werden. Ohne
+M1--M3 wird jeder weitere Lauf dieselben drei bis acht unerforschten
+$cat=3$-Zustände falsch entscheiden -- lediglich an wechselnden Stellen.
+
+%======================================================================
+\section{Fazit}
+%======================================================================
+
+\begin{enumerate}[leftmargin=1.6em]
+  \item Die Puffersymmetrie ist \textbf{bit-exakt korrekt} implementiert;
+        alle Spiegelpaare und selbstsymmetrischen Zustände sind konsistent.
+  \item Die Zahl der unterschiedlichen Fehlerlogiken sinkt von
+        \textbf{8 auf 5}; alle vier dokumentierten Fehlerzeilen aus Lauf 1
+        sind behoben.
+  \item Match-Vorrang bei leerem Gegenpuffer ($100\,\%$) und
+        Opfer-Kriterium ($100\,\%$ konsistent) sind vollständig gelernt.
+  \item Das \textbf{Explorationsdefizit besteht unverändert} und trifft in
+        Lauf 2 sogar ökonomisch teurere Match-Zustände mit $cat=3$.
+  \item Als neuer Hauptbefund ist die \textbf{Typ-Symmetrie} zu nennen:
+        sechsfach redundantes Lernen identischer Situationen mit bis zu
+        $8\,\%$ Wertestreuung. Eine relative Kodierung würde den
+        Zustandsraum auf 28 Klassen reduzieren.
+  \item Das abgesenkte $Q$-Niveau ($\approx 73\,\%$ von Lauf 1) ist vor der
+        Interpretation der Quoten zu klären.
+\end{enumerate}
+
+\end{document}

@@ -215,10 +215,45 @@ def plot_from_csv(csv_filepath=None,
     fig.savefig(output_image_path, dpi=300, bbox_inches="tight")
     print(f"[OFFLINE PLOT] Plot saved to: '{output_image_path}'")
 
-    if show:
-        plt.show()
-    else:
-        plt.close(fig)
+def save_and_plot_training(steps_needed, agent_type="q_learning"):
+    """
+    Speichert die Trainingsergebnisse (Schritte pro Episode) als CSV in data/
+    und erzeugt einen Plot in graph/.
+    Dateiname: YYYYMMDD_HHMMSS_{agent_type}.csv / .png
+    """
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_name = f"{timestamp}_{agent_type}"
+
+    # 1. Ordner sicherstellen
+    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(GRAPH_DIR, exist_ok=True)
+
+    csv_path = os.path.join(DATA_DIR, f"{base_name}.csv")
+    graph_path = os.path.join(GRAPH_DIR, f"{base_name}.png")
+
+    # 2. CSV speichern
+    with open(csv_path, mode="w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["episode", "steps_needed"])
+        for ep_idx, steps in enumerate(steps_needed, start=1):
+            writer.writerow([ep_idx, int(steps)])
+    print(f"[DATA EXPORT] Trainingsdaten gespeichert in: '{csv_path}'")
+
+    # 3. Lernkurven-Plot erzeugen
+    fig, ax = plt.subplots(figsize=(9, 5))
+    episodes = list(range(1, len(steps_needed) + 1))
+
+    ax.plot(episodes, steps_needed, color="#2ca02c", linewidth=2.0, marker="o", markersize=4, label="Schritte bis Ziel")
+
+    ax.set_title(f"Lernkurve: {agent_type.upper()}", fontsize=14, fontweight="bold", pad=12)
+    ax.set_xlabel("Episode", fontsize=11)
+    ax.set_ylabel("Benötigte Schritte bis zum Ziel", fontsize=11)
+    ax.grid(True, linestyle="--", alpha=0.6)
+    ax.legend()
+
+    fig.savefig(graph_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[VISUALIZATION] Lernkurven-Plot gespeichert unter: '{graph_path}'")
 
 
 if __name__ == "__main__":
@@ -230,6 +265,7 @@ if __name__ == "__main__":
 
     show_window = not args.no_show
     plot_from_csv(csv_filepath=args.csv, output_image_path=args.out, show=show_window)
+
 
 
 

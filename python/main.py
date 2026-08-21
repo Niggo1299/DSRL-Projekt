@@ -5,12 +5,13 @@ Initialisiert Plant Simulation und das Problem-Environment.
 Führt Episoden mit dem gewählten Agenten aus (Standard: Simple Reflex Agent).
 """
 
+from win32com.client import gencache
 import sys
 
 from plantsim.plantsim import Plantsim
 from problem.problem import PlantSimulationProblem, SimulationFailedError
 from agent.agent import ReflexAgent, QLearningAgent, TrainingTestAgent
-from visualization.visualization import SimulationPlotter
+from visualization.visualization import SimulationPlotter, save_and_plot_training
 
 # ============================ Konfiguration ============================
 MODEL_PATH = (
@@ -26,7 +27,7 @@ TIMEOUT            = 30.0    # s - max. Wartezeit auf einen Entscheidungspunkt
 AGENT_TYPE         = "reflex"
 
 SAVE_CSV_DATA      = True    # True = Ergebnisse nach Episode als CSV speichern
-TARGET_DRAIN_COUNT = 1000    # Abbrechen, wenn 1000 Teile im Drain sind (None = deaktiviert)
+TARGET_DRAIN_COUNT = 1000    # Zielanzahl Teile im Drain
 # =======================================================================
 
 
@@ -90,7 +91,7 @@ def main():
         path_context=CONTEXT,
         model=MODEL_PATH,
         version=PLANTSIM_VERSION,
-        visible=True,
+        visible=False,
         trust_models=True,
         license_type="Educational",
     )
@@ -115,9 +116,10 @@ def main():
     try:
         if AGENT_TYPE == "q_learning":
             print("\n[RL-TRAINING] Starte Q-Learning Trainingslauf...")
-            steps = agent.train(episodes=10, alpha=0.1, max_steps=1000)
+            steps = agent.train(episodes=100, alpha=0.1, max_steps=3000, gamma = 0.99, max_N_exploration = 3   , R_Max = 2000)   
             agent.save_q_table("q_table.npy")
             print(f"[RL-TRAINING] Training abgeschlossen. Schritte je Episode: {steps}")
+            save_and_plot_training(steps, agent_type=AGENT_TYPE)
         else:
             while True:
                 cmd = input("\n[ENTER] = neue Episode starten, 'q' = Programm beenden: ").strip().lower()
@@ -130,6 +132,12 @@ def main():
     except SimulationFailedError as e:
         print(f"\n[ABBRUCH] Simulation fehlgeschlagen: {e}")
         exit_code = 1
+
+    except KeyboardInterrupt:
+        print("\n[INFO] Programm durch Benutzer mit Strg+C unterbrochen.")
+        if AGENT_TYPE == "q_learning" and 'agent' in locals():
+            agent.save_q_table("q_table.npy")
+            print("[INFO] Aktuelle Q-Tabelle wurde gesichert.")
 
     finally:
         if plotter and plotter.records:
