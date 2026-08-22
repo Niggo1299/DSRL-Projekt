@@ -89,22 +89,18 @@ class State:
         self.sim_time_str = format_mm_ss(sim_time)
 
     def to_state(self):
-        """Gibt das 5er-Zustandstupel (b1rel, b2rel, b1cat, b2cat, lastcollect) mit 243 Zuständen zurück."""
+        """Gibt das minimale relative Zustandstupel (b1rel, b2rel) mit 9 Zuständen zurück."""
         b1rel = get_relative_type(self.b1typ, self.inc, self.b1cnt)
         b2rel = get_relative_type(self.b2typ, self.inc, self.b2cnt)
-        b1cat = get_fill_category(self.b1cnt)
-        b2cat = get_fill_category(self.b2cnt)
-        return (b1rel, b2rel, b1cat, b2cat, self.lastcollect)
+        return (b1rel, b2rel)
 
     def __repr__(self):
         b1rel = get_relative_type(self.b1typ, self.inc, self.b1cnt)
         b2rel = get_relative_type(self.b2typ, self.inc, self.b2cnt)
         rel_map = {0: "Leer", 1: "Match", 2: "Dismatch"}
-        lc_map = {0: "Init", 1: "Collected", 2: "NotCollected"}
         return (
-            f"State(inc={self.inc}, B1=({self.b1cnt}x Typ {self.b1typ}, {rel_map[b1rel]}, Kat={get_fill_category(self.b1cnt)}), "
-            f"B2=({self.b2cnt}x Typ {self.b2typ}, {rel_map[b2rel]}, Kat={get_fill_category(self.b2cnt)}), "
-            f"LastCollect={lc_map.get(self.lastcollect, self.lastcollect)}, Drain={self.drain_total}, Time={self.sim_time_str})"
+            f"State(inc={self.inc}, B1=({self.b1cnt}x Typ {self.b1typ}, {rel_map[b1rel]}), "
+            f"B2=({self.b2cnt}x Typ {self.b2typ}, {rel_map[b2rel]}), Drain={self.drain_total}, Time={self.sim_time_str})"
         )
 
 
@@ -141,18 +137,11 @@ class PlantSimulationProblem:
         self.timeout = timeout
         self.last_state = None
 
-        # Interner Speicher für das Gedächtnis (LastCollect)
-        self.mem_b1 = 0  # Letzter echter Typ in Puffer 1
-        self.mem_b2 = 0  # Letzter echter Typ in Puffer 2
-
-        # Erzeuge alle 243 diskreten Zustände (3 x 3 x 3 x 3 x 3)
+        # Erzeuge alle 9 diskreten relativen Zustände (3 x 3)
         self.states = []
         for b1rel in [0, 1, 2]:
             for b2rel in [0, 1, 2]:
-                for b1cat in [1, 2, 3]:
-                    for b2cat in [1, 2, 3]:
-                        for lastcollect in [0, 1, 2]:
-                            self.states.append((b1rel, b2rel, b1cat, b2cat, lastcollect))
+                self.states.append((b1rel, b2rel))
 
         # Aktionen: 1 = Puffer 1, 2 = Puffer 2, 3 = Return (Schleife)
         self.actions = [1, 2, 3]
@@ -162,7 +151,7 @@ class PlantSimulationProblem:
         return self.actions
 
     def get_all_states(self):
-        """Liefert die Liste aller 243 diskreten Zustände."""
+        """Liefert die Liste aller 9 diskreten relativen Zustände."""
         return self.states
 
     def get_applicable_actions(self, current_state=None):

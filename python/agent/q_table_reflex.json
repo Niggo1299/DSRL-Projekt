@@ -1,50 +1,191 @@
 {
-  "Zustand (inc=1, b1typ=0, b2typ=0)": 1,
-  "Zustand (inc=1, b1typ=0, b2typ=1)": 2,
-  "Zustand (inc=1, b1typ=0, b2typ=2)": 1,
-  "Zustand (inc=1, b1typ=0, b2typ=3)": 1,
-  "Zustand (inc=1, b1typ=1, b2typ=0)": 1,
-  "Zustand (inc=1, b1typ=1, b2typ=1)": 1,
-  "Zustand (inc=1, b1typ=1, b2typ=2)": 1,
-  "Zustand (inc=1, b1typ=1, b2typ=3)": 1,
-  "Zustand (inc=1, b1typ=2, b2typ=0)": 2,
-  "Zustand (inc=1, b1typ=2, b2typ=1)": 2,
-  "Zustand (inc=1, b1typ=2, b2typ=2)": 3,
-  "Zustand (inc=1, b1typ=2, b2typ=3)": 3,
-  "Zustand (inc=1, b1typ=3, b2typ=0)": 2,
-  "Zustand (inc=1, b1typ=3, b2typ=1)": 2,
-  "Zustand (inc=1, b1typ=3, b2typ=2)": 3,
-  "Zustand (inc=1, b1typ=3, b2typ=3)": 3,
-  "Zustand (inc=2, b1typ=0, b2typ=0)": 1,
-  "Zustand (inc=2, b1typ=0, b2typ=1)": 1,
-  "Zustand (inc=2, b1typ=0, b2typ=2)": 2,
-  "Zustand (inc=2, b1typ=0, b2typ=3)": 1,
-  "Zustand (inc=2, b1typ=1, b2typ=0)": 2,
-  "Zustand (inc=2, b1typ=1, b2typ=1)": 3,
-  "Zustand (inc=2, b1typ=1, b2typ=2)": 2,
-  "Zustand (inc=2, b1typ=1, b2typ=3)": 3,
-  "Zustand (inc=2, b1typ=2, b2typ=0)": 1,
-  "Zustand (inc=2, b1typ=2, b2typ=1)": 1,
-  "Zustand (inc=2, b1typ=2, b2typ=2)": 1,
-  "Zustand (inc=2, b1typ=2, b2typ=3)": 1,
-  "Zustand (inc=2, b1typ=3, b2typ=0)": 2,
-  "Zustand (inc=2, b1typ=3, b2typ=1)": 3,
-  "Zustand (inc=2, b1typ=3, b2typ=2)": 2,
-  "Zustand (inc=2, b1typ=3, b2typ=3)": 3,
-  "Zustand (inc=3, b1typ=0, b2typ=0)": 1,
-  "Zustand (inc=3, b1typ=0, b2typ=1)": 1,
-  "Zustand (inc=3, b1typ=0, b2typ=2)": 1,
-  "Zustand (inc=3, b1typ=0, b2typ=3)": 2,
-  "Zustand (inc=3, b1typ=1, b2typ=0)": 2,
-  "Zustand (inc=3, b1typ=1, b2typ=1)": 3,
-  "Zustand (inc=3, b1typ=1, b2typ=2)": 3,
-  "Zustand (inc=3, b1typ=1, b2typ=3)": 2,
-  "Zustand (inc=3, b1typ=2, b2typ=0)": 2,
-  "Zustand (inc=3, b1typ=2, b2typ=1)": 3,
-  "Zustand (inc=3, b1typ=2, b2typ=2)": 3,
-  "Zustand (inc=3, b1typ=2, b2typ=3)": 2,
-  "Zustand (inc=3, b1typ=3, b2typ=0)": 1,
-  "Zustand (inc=3, b1typ=3, b2typ=1)": 1,
-  "Zustand (inc=3, b1typ=3, b2typ=2)": 1,
-  "Zustand (inc=3, b1typ=3, b2typ=3)": 1
+  "Zustand (B1=0 [leer], B2=0 [leer], LC=0 [Init])": {
+    "b1rel": 0,
+    "b2rel": 0,
+    "lastcollect": 0,
+    "Aktion": 1,
+    "Beschreibung": "Puffer 1"
+  },
+  "Zustand (B1=0 [leer], B2=0 [leer], LC=1 [Collected])": {
+    "b1rel": 0,
+    "b2rel": 0,
+    "lastcollect": 1,
+    "Aktion": 1,
+    "Beschreibung": "Puffer 1"
+  },
+  "Zustand (B1=0 [leer], B2=0 [leer], LC=2 [NotCollected])": {
+    "b1rel": 0,
+    "b2rel": 0,
+    "lastcollect": 2,
+    "Aktion": 1,
+    "Beschreibung": "Puffer 1"
+  },
+  "Zustand (B1=0 [leer], B2=1 [match], LC=0 [Init])": {
+    "b1rel": 0,
+    "b2rel": 1,
+    "lastcollect": 0,
+    "Aktion": 2,
+    "Beschreibung": "Puffer 2"
+  },
+  "Zustand (B1=0 [leer], B2=1 [match], LC=1 [Collected])": {
+    "b1rel": 0,
+    "b2rel": 1,
+    "lastcollect": 1,
+    "Aktion": 2,
+    "Beschreibung": "Puffer 2"
+  },
+  "Zustand (B1=0 [leer], B2=1 [match], LC=2 [NotCollected])": {
+    "b1rel": 0,
+    "b2rel": 1,
+    "lastcollect": 2,
+    "Aktion": 2,
+    "Beschreibung": "Puffer 2"
+  },
+  "Zustand (B1=0 [leer], B2=2 [dismatch], LC=0 [Init])": {
+    "b1rel": 0,
+    "b2rel": 2,
+    "lastcollect": 0,
+    "Aktion": 1,
+    "Beschreibung": "Puffer 1"
+  },
+  "Zustand (B1=0 [leer], B2=2 [dismatch], LC=1 [Collected])": {
+    "b1rel": 0,
+    "b2rel": 2,
+    "lastcollect": 1,
+    "Aktion": 3,
+    "Beschreibung": "Return-Schleife"
+  },
+  "Zustand (B1=0 [leer], B2=2 [dismatch], LC=2 [NotCollected])": {
+    "b1rel": 0,
+    "b2rel": 2,
+    "lastcollect": 2,
+    "Aktion": 1,
+    "Beschreibung": "Puffer 1"
+  },
+  "Zustand (B1=1 [match], B2=0 [leer], LC=0 [Init])": {
+    "b1rel": 1,
+    "b2rel": 0,
+    "lastcollect": 0,
+    "Aktion": 1,
+    "Beschreibung": "Puffer 1"
+  },
+  "Zustand (B1=1 [match], B2=0 [leer], LC=1 [Collected])": {
+    "b1rel": 1,
+    "b2rel": 0,
+    "lastcollect": 1,
+    "Aktion": 1,
+    "Beschreibung": "Puffer 1"
+  },
+  "Zustand (B1=1 [match], B2=0 [leer], LC=2 [NotCollected])": {
+    "b1rel": 1,
+    "b2rel": 0,
+    "lastcollect": 2,
+    "Aktion": 1,
+    "Beschreibung": "Puffer 1"
+  },
+  "Zustand (B1=1 [match], B2=1 [match], LC=0 [Init])": {
+    "b1rel": 1,
+    "b2rel": 1,
+    "lastcollect": 0,
+    "Aktion": 1,
+    "Beschreibung": "Puffer 1"
+  },
+  "Zustand (B1=1 [match], B2=1 [match], LC=1 [Collected])": {
+    "b1rel": 1,
+    "b2rel": 1,
+    "lastcollect": 1,
+    "Aktion": 1,
+    "Beschreibung": "Puffer 1"
+  },
+  "Zustand (B1=1 [match], B2=1 [match], LC=2 [NotCollected])": {
+    "b1rel": 1,
+    "b2rel": 1,
+    "lastcollect": 2,
+    "Aktion": 1,
+    "Beschreibung": "Puffer 1"
+  },
+  "Zustand (B1=1 [match], B2=2 [dismatch], LC=0 [Init])": {
+    "b1rel": 1,
+    "b2rel": 2,
+    "lastcollect": 0,
+    "Aktion": 1,
+    "Beschreibung": "Puffer 1"
+  },
+  "Zustand (B1=1 [match], B2=2 [dismatch], LC=1 [Collected])": {
+    "b1rel": 1,
+    "b2rel": 2,
+    "lastcollect": 1,
+    "Aktion": 1,
+    "Beschreibung": "Puffer 1"
+  },
+  "Zustand (B1=1 [match], B2=2 [dismatch], LC=2 [NotCollected])": {
+    "b1rel": 1,
+    "b2rel": 2,
+    "lastcollect": 2,
+    "Aktion": 1,
+    "Beschreibung": "Puffer 1"
+  },
+  "Zustand (B1=2 [dismatch], B2=0 [leer], LC=0 [Init])": {
+    "b1rel": 2,
+    "b2rel": 0,
+    "lastcollect": 0,
+    "Aktion": 2,
+    "Beschreibung": "Puffer 2"
+  },
+  "Zustand (B1=2 [dismatch], B2=0 [leer], LC=1 [Collected])": {
+    "b1rel": 2,
+    "b2rel": 0,
+    "lastcollect": 1,
+    "Aktion": 3,
+    "Beschreibung": "Return-Schleife"
+  },
+  "Zustand (B1=2 [dismatch], B2=0 [leer], LC=2 [NotCollected])": {
+    "b1rel": 2,
+    "b2rel": 0,
+    "lastcollect": 2,
+    "Aktion": 2,
+    "Beschreibung": "Puffer 2"
+  },
+  "Zustand (B1=2 [dismatch], B2=1 [match], LC=0 [Init])": {
+    "b1rel": 2,
+    "b2rel": 1,
+    "lastcollect": 0,
+    "Aktion": 2,
+    "Beschreibung": "Puffer 2"
+  },
+  "Zustand (B1=2 [dismatch], B2=1 [match], LC=1 [Collected])": {
+    "b1rel": 2,
+    "b2rel": 1,
+    "lastcollect": 1,
+    "Aktion": 2,
+    "Beschreibung": "Puffer 2"
+  },
+  "Zustand (B1=2 [dismatch], B2=1 [match], LC=2 [NotCollected])": {
+    "b1rel": 2,
+    "b2rel": 1,
+    "lastcollect": 2,
+    "Aktion": 2,
+    "Beschreibung": "Puffer 2"
+  },
+  "Zustand (B1=2 [dismatch], B2=2 [dismatch], LC=0 [Init])": {
+    "b1rel": 2,
+    "b2rel": 2,
+    "lastcollect": 0,
+    "Aktion": 3,
+    "Beschreibung": "Return-Schleife"
+  },
+  "Zustand (B1=2 [dismatch], B2=2 [dismatch], LC=1 [Collected])": {
+    "b1rel": 2,
+    "b2rel": 2,
+    "lastcollect": 1,
+    "Aktion": 3,
+    "Beschreibung": "Return-Schleife"
+  },
+  "Zustand (B1=2 [dismatch], B2=2 [dismatch], LC=2 [NotCollected])": {
+    "b1rel": 2,
+    "b2rel": 2,
+    "lastcollect": 2,
+    "Aktion": 3,
+    "Beschreibung": "Return-Schleife"
+  }
 }

@@ -24,7 +24,7 @@ POLL_INTERVAL      = 0.002   # s - Abfrageintervall für StateReady
 TIMEOUT            = 30.0    # s - max. Wartezeit auf einen Entscheidungspunkt
 
 # Agenten-Auswahl: "reflex", "manual", "q_learning", "training_test"
-AGENT_TYPE         = "reflex"
+AGENT_TYPE         = "q_learning"
 
 SAVE_CSV_DATA      = True    # True = Ergebnisse nach Episode als CSV speichern
 TARGET_DRAIN_COUNT = 1000    # Zielanzahl Teile im Drain
@@ -116,7 +116,7 @@ def main():
     try:
         if AGENT_TYPE == "q_learning":
             print("\n[RL-TRAINING] Starte Q-Learning Trainingslauf...")
-            steps = agent.train(episodes=100, alpha=0.1, max_steps=3000, gamma = 0.99, max_N_exploration = 3   , R_Max = 2000)   
+            steps = agent.train(episodes=10, alpha=0.1, max_steps=3000, gamma = 0.99, max_N_exploration = 3   , R_Max = 2000)   
             agent.save_q_table("q_table.npy")
             print(f"[RL-TRAINING] Training abgeschlossen. Schritte je Episode: {steps}")
             save_and_plot_training(steps, agent_type=AGENT_TYPE)
