@@ -16,7 +16,7 @@
 % Spaltentypen
 \newcolumntype{L}{>{\raggedright\arraybackslash}X}
 \newcolumntype{C}{>{\centering\arraybackslash}X}
-\newcolumntype{r}{>{\raggedleft\arraybackslash}p{1.9cm}}
+\newcolumntype{R}{>{\raggedleft\arraybackslash}X}
 
 % Kopf-/Fusszeile
 \pagestyle{fancy}
@@ -177,7 +177,7 @@ Information zu tragen.
 \caption{Trefferquoten nach Entscheidungssituation, Lauf 2 gegen Lauf 1}
 \label{tab:policy}
 \small
-\begin{tabularx}{\textwidth}{@{}LlrrR{}}
+\begin{tabularx}{\textwidth}{@{}LlrrR@{}}
 \toprule
 \textbf{Situation} & \textbf{Korrekte Aktion} & \textbf{Treffer} &
 \textbf{Quote} & \textbf{Lauf 1} \\

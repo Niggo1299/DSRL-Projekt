@@ -1,0 +1,4 @@
+Baseline: Simple Reflex Agent
+- Vergleich mit und ohne LastCollect-Gedaechtnis
+- Gleiche deterministische Teile-Reihenfolge (1000 Teile)
+- Ergebnis: Ohne LastCollect (1956 Schritte, 429:02) schneller als mit (1971 Schritte, 432:12)
