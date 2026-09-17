@@ -1,8 +1,0 @@
-150 episoden 
-3 N
-1500 R_max
-alpha 0.1
-gamma 0.99
-symetrisierung
-reward farming möglich
-reduktion der füllstände -> 3 kategorien

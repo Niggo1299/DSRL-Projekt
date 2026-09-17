@@ -1,9 +1,0 @@
-500 episoden 
-3 N
-1000 R_max
-alpha 0.1
-gamma 0.99
-keine symetrisierung
-altes reward function möglichkeit des rewartfarming
-keine relativen setting
-kein zusammenfassen der füllstände
