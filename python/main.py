@@ -5,13 +5,17 @@ Initialisiert Plant Simulation und das Problem-Environment.
 Führt Episoden mit dem gewählten Agenten aus (Standard: Simple Reflex Agent).
 """
 
-from win32com.client import gencache
+import os
 import sys
+import csv
+import datetime
+from win32com.client import gencache
 
 from plantsim.plantsim import Plantsim
 from problem.problem import PlantSimulationProblem, SimulationFailedError
 from agent.agent import ReflexAgent, QLearningAgent, TrainingTestAgent
-from visualization.visualization import SimulationPlotter, save_and_plot_training
+
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 
 # ============================ Konfiguration ============================
 MODEL_PATH = (
@@ -24,11 +28,54 @@ POLL_INTERVAL      = 0.002   # s - Abfrageintervall für StateReady
 TIMEOUT            = 30.0    # s - max. Wartezeit auf einen Entscheidungspunkt
 
 # Agenten-Auswahl: "reflex", "manual", "q_learning", "training_test"
-AGENT_TYPE         = "q_learning"
+AGENT_TYPE         = "training_test"
 
 SAVE_CSV_DATA      = True    # True = Ergebnisse nach Episode als CSV speichern
 TARGET_DRAIN_COUNT = 1000    # Zielanzahl Teile im Drain
 # =======================================================================
+
+
+class DataRecorder:
+    """Zeichnet Simulationsdaten auf und exportiert sie als CSV."""
+
+    def __init__(self):
+        self.records = []
+
+    def record(self, sim_time, drain_count, step=0):
+        self.records.append({
+            "step": step,
+            "sim_time": float(sim_time),
+            "sim_time_str": f"{int(sim_time)//3600:02d}:{(int(sim_time)%3600)//60:02d}",
+            "drain_count": int(drain_count)
+        })
+
+    def save_csv(self, filepath=None):
+        if not self.records:
+            return None
+        os.makedirs(DATA_DIR, exist_ok=True)
+        if not filepath:
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filepath = os.path.join(DATA_DIR, f"{timestamp}.csv")
+        with open(filepath, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=["step", "sim_time", "sim_time_str", "drain_count"])
+            writer.writeheader()
+            writer.writerows(self.records)
+        print(f"[DATA EXPORT] {len(self.records)} Datensätze in '{filepath}' gespeichert.")
+        return filepath
+
+
+def save_training_csv(steps_needed, agent_type="q_learning"):
+    """Speichert Trainingsergebnisse als CSV in data/."""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    filepath = os.path.join(DATA_DIR, f"{timestamp}_{agent_type}.csv")
+    with open(filepath, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["episode", "steps_needed"])
+        for ep, steps in enumerate(steps_needed, start=1):
+            writer.writerow([ep, int(steps)])
+    print(f"[DATA EXPORT] Trainingsdaten in '{filepath}' gespeichert.")
+    return filepath
 
 
 def create_agent(agent_type, problem):
@@ -91,7 +138,7 @@ def main():
         path_context=CONTEXT,
         model=MODEL_PATH,
         version=PLANTSIM_VERSION,
-        visible=False,
+        visible=True,
         trust_models=True,
         license_type="Educational",
     )
@@ -110,16 +157,21 @@ def main():
     if isinstance(agent, ReflexAgent) and not agent.manual_control:
         agent.print_table()
 
-    plotter = SimulationPlotter() if SAVE_CSV_DATA else None
+    plotter = DataRecorder() if SAVE_CSV_DATA else None
     exit_code = 0
 
     try:
         if AGENT_TYPE == "q_learning":
             print("\n[RL-TRAINING] Starte Q-Learning Trainingslauf...")
-            steps = agent.train(episodes=10, alpha=0.1, max_steps=3000, gamma = 0.99, max_N_exploration = 3   , R_Max = 2000)   
+            steps = agent.train(episodes=2, alpha=0.1, max_steps=3000, gamma = 0.99, max_N_exploration = 3   , R_Max = 2000)   
             agent.save_q_table("q_table.npy")
-            print(f"[RL-TRAINING] Training abgeschlossen. Schritte je Episode: {steps}")
-            save_and_plot_training(steps, agent_type=AGENT_TYPE)
+
+            # --- Q-Verlauf speichern ---
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            history_file = os.path.join(DATA_DIR, f"{timestamp}_q_history.csv")
+            agent.save_q_history(history_file)
+
+            save_training_csv(steps, agent_type=AGENT_TYPE)
         else:
             while True:
                 cmd = input("\n[ENTER] = neue Episode starten, 'q' = Programm beenden: ").strip().lower()
@@ -138,6 +190,8 @@ def main():
         if AGENT_TYPE == "q_learning" and 'agent' in locals():
             agent.save_q_table("q_table.npy")
             print("[INFO] Aktuelle Q-Tabelle wurde gesichert.")
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            agent.save_q_history(os.path.join(DATA_DIR, f"{timestamp}_q_history_interrupted.csv"))
 
     finally:
         if plotter and plotter.records:

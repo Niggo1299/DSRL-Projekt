@@ -23,6 +23,7 @@ class Agent:
         self.problem = problem
         self.action_plan = []
         self.planning_index = 0
+        self.q_history = []
 
     def plan(self, current_state):
         actions = []
@@ -392,6 +393,19 @@ class QLearningAgent(Agent):
                     td_error_sym = (reward + self.gamma * best_next_q_sym) - self.q_table[s_sym_idx, a_sym_idx]
                     self.q_table[s_sym_idx, a_sym_idx] += alpha * td_error_sym
                 
+                # --- Gesamten Verlauf aufzeichnen ---
+                b1rel, b2rel = current_state.to_state()
+                self.q_history.append({
+                    "episode": episode + 1,
+                    "step": step + 1,
+                    "b1": b1rel,
+                    "b2": b2rel,
+                    "action": action,
+                    "q1": self.q_table[s, 0],
+                    "q2": self.q_table[s, 1],
+                    "q3": self.q_table[s, 2],
+                })
+
                 # Overwrite current state for the next step
                 current_state = next_state
                 
@@ -409,6 +423,17 @@ class QLearningAgent(Agent):
 
     def save_q_table(self, file):
         np.save(file, self.q_table)
+    
+    def save_q_history(self, filepath):
+        import csv
+        if not self.q_history:
+            return
+        with open(filepath, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=["episode", "step", "b1", "b2", "action", "q1", "q2", "q3"])
+            writer.writeheader()
+            writer.writerows(self.q_history)
+        print(f"[DATA EXPORT] Gesamter Q-Verlauf ({len(self.q_history)} Schritte) gespeichert in '{filepath}'.")
+
 
     def load_q_table(self, file):
         self.q_table = np.load(file)
