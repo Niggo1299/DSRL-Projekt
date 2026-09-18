@@ -14,7 +14,7 @@ from problem.problem import SimulationFailedError
 
 
 # =====================================================================
-# 1. BASE CLASS (1:1 from lecture template)
+# 1. BASE CLASS
 # =====================================================================
 class Agent:
     def __init__(self, problem):
@@ -64,7 +64,7 @@ class Agent:
 
 
 # =====================================================================
-# 2. Q-LEARNING AGENT (1:1 from lecture template)
+# 2. Q-LEARNING AGENT
 # =====================================================================
 class QLearningAgent(Agent):
 

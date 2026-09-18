@@ -45,7 +45,7 @@ def plot_learning_curve(csv_path, output_path):
 
     plt.figure(figsize=(9, 5))
     plt.plot(data["episode"], data["steps_needed"], color="#1f77b4", linewidth=1.8, marker="o", markersize=3)
-    plt.title("Learning Curve: Steps per Episode", fontsize=13, fontweight="bold")
+    plt.title("Learning Curve Q-Lerning Minimal Konfiguration", fontsize=14)
     plt.xlabel("Episode", fontsize=11)
     plt.ylabel("Steps needed to reach goal", fontsize=11)
     plt.grid(True, linestyle="--", alpha=0.6)

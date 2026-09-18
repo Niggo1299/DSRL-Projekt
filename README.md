@@ -1,112 +1,108 @@
-# Diskrete Simulation und Reinforcement Learning – Projekt
+# Discrete Simulation and Reinforcement Learning – Project
 
-**Thema:** Robotergestützte, sortenreine Teile-Sortierung in einem Hochregallager mit zwei Pufferspeichern und Rückführschleife  
-**Umgebung:** Siemens Tecnomatix Plant Simulation (16.1) über Python COM-Schnittstelle  
-**Hochschule:** Hochschule Bielefeld (HSBI)
+**Topic:** Autonomous sorting robot in a high-bay storage system with two buffer stores and return loop  
+**Environment:** Siemens Tecnomatix Plant Simulation (16.1) via Python COM interface  
+**Institution:** Bielefeld University of Applied Sciences and Arts (HSBI)
 
 ---
 
-## 1. Projektübersicht
+## 1. Overview
 
-Dieses Projekt untersucht und optimiert die Steuerung eines Sortierroboters mittels **tabellarischem Q-Learning (GLIE-Schema)** und vergleicht diesen mit regelbasierten **Reflex-Agenten**. 
+This project implements an autonomous sorting robot using **tabular Q-learning with GLIE exploration** (*Greedy in the Limit with Infinite Exploration*) to sort incoming parts into two buffer stores in Tecnomatix Plant Simulation.
 
-Aus einem Lager fließen stochastisch drei verschiedene Teiletypen (Typ 1, 2, 3). Der Roboter muss die Teile auf zwei Pufferspeicher sortieren. Sobald ein Puffer **10 sortenreine Teile** enthält, entleert er sich in die Senke (*Drain*). Falsch einsortierte Teile fließen in die Rückführschleife (*Return-Loop*). Ziel ist es, **1.000 Teile** mit maximalem Durchsatz (minimale Simulationszeit / minimale Schritte) abzuführen.
+Parts of three types (1, 2, 3) arrive randomly. When a buffer collects **10 matching parts**, it empties into the **Drain**. Mismatched parts are redirected into the **Return Loop**. The objective is to sort and drain **1,000 parts** with minimal steps and simulation time.
 
-```
-                  ┌───────────────┐
-                  │ Quelle / Lager │ (Typ 1, 2, 3)
-                  └───────┬───────┘
+```text
+                  ┌────────────────┐
+                  │ Source / Store │ (Type 1, 2, 3)
+                  └───────┬────────┘
+                          │
                           ▼
                     ┌───────────┐
-                    │  Roboter  │ ◄─────── Rückführschleife (Return-Loop)
+                    │   Robot   │ ◄─────── Return Loop
                     └─────┬─────┘                   ▲
            ┌──────────────┼──────────────┐          │
            ▼              ▼              ▼          │
      ┌───────────┐  ┌───────────┐  ┌───────────┐    │
-     │ Puffer 1  │  │ Puffer 2  │  │  Return   │────┘
+     │ Buffer 1  │  │ Buffer 2  │  │  Return   │────┘
      │  (max 10) │  │  (max 10) │  └───────────┘
      └─────┬─────┘  └─────┬─────┘
            └──────┬───────┘
                   ▼
               ┌───────┐
-              │ Drain │ (Ziel: 1.000 Teile)
+              │ Drain │ (Goal: 1,000 parts)
               └───────┘
 ```
 
 ---
 
-## 2. Ordnerstruktur
+## 2. Problem Formulation (MDP)
+
+- **State Space (9 relative states):**
+  0 = Empty, 1 = Match, 2 = Mismatch relative to the incoming part.
+- **Action Space (3 actions):**
+  1 = Buffer 1, 2 = Buffer 2, 3 = Return Loop.
+- **Reward Function:**
+  - Step penalty: -1 per step until goal is reached.
+  - Throughput reward: +100 per part entering the drain.
+  - Buffer placement: +n for buffering the n-th matching part.
+  - Buffer loss: n(n+1)/2 if parts leave the buffer without draining.
+
+## 3. Project Structure
 
 ```text
 Projekt/
-├── 01_Dokumentation/                # Aufgabenstellung und Konzeptpapiere
-│   ├── Project.pdf                  # Aufgabenstellung
-│   └── LastCollect_Beschreibung.txt # Konzept des internen Speichers
+├── Doku/                             # Project assignment & presentation slides
+│   ├── Project.pdf
+│   ├── presentation.pdf
+│   └── presentation.pptx
 │
-├── 02_Experimente/                  # Dokumentierte Trainings- und Testreihen
-│   ├── 00_Baseline_ReflexAgent/     # Heuristischer Reflex-Agent (mit/ohne LastCollect)
-│   ├── 01_QLearning_Basis/          # Lauf 1: 432 Zustände, ohne Symmetrie, altes Reward
-│   ├── 02_QLearning_Symmetrie/      # Lauf 2: 432 Zustände, mit Puffersymmetrie (Protokoll 2)
-│   ├── 03_QLearning_RelativeTypen/  # Lauf 3: 81 Zustände, Füllstandskat. + Anti-Farming-Reward
-│   ├── 04_QLearning_LastCollect/    # Lauf 4: 243 Zustände, POMDP-Gedächtnisspeicher
-│   └── 05_QLearning_Minimal/        # Lauf 5: 9 relative Zustände (b1rel, b2rel) + Symmetrie
+├── plant/                            # Simulation model
+│   └── plantmodel.spp
 │
-├── plant/                           # Simulationsmodell
-│   └── plantmodel.spp               # Tecnomatix Plant Simulation Modell
+├── python/                           # Source code
+│   ├── main.py                       # Main execution script (train & test)
+│   ├── agent/                        # Base Agent & QLearningAgent (q_table.npy)
+│   ├── problem/                      # Environment interface & COM handshake
+│   ├── plantsim/                     # COM wrapper for Plant Simulation
+│   ├── data/                         # CSV logs (training_steps, q_history, throughput)
+│   ├── graph/                        # Generated evaluation plots (PNG)
+│   └── visualization/                # Plotting script (visualization.py)
 │
-├── python/                          # Python-Codebasis
-│   ├── main.py                      # Hauptprogramm (Training & Evaluation)
-│   ├── agent/                       # Agentenklassen (ReflexAgent, QLearningAgent, TrainingTestAgent)
-│   ├── problem/                     # Problem-Environment & COM-Handshake (PlantSimulationProblem)
-│   ├── plantsim/                    # COM-Wrapper für Siemens Plant Simulation
-│   ├── visualization/               # Plotter & Lernkurven-Visualisierung
-│   └── data/                        # Generierte Simulationsdaten
-│
-└── README.md                        # Projektübersicht
+└── README.md                         # Project documentation
 ```
 
 ---
 
-## 3. Übersicht aller Experimente & Evolutionsstufen
+## 4. Quickstart
 
-| Lauf / Experiment | Zustandsvektor $s$ | Anzahl Zustände | Q-Werte | Symmetrie | Besonderheiten & Erkenntnisse |
-| :--- | :--- | :---: | :---: | :---: | :--- |
-| **00. Baseline (Reflex-Agent)** | `(b1rel, b2rel)` | 9 | – | Nein | Deterministische Heuristik. 1.956 Schritte ($429\text{ min}$). Referenz für Durchsatz. |
-| **01. Q-Learning Basis** | `(inc, b1typ, b2typ, b1cat, b2cat)` | 432 | 1.296 | Nein | 132 unvollständige Zustände; Reward-Farming-Exploit bei Pufferverlust aufgedeckt. |
-| **02. Q-Learning Symmetrie** | `(inc, b1typ, b2typ, b1cat, b2cat)` | 432 | 1.296 | **Ja** | Verdoppelte Sample-Effizienz (111 Klassen); Fehlerzeilen aus Lauf 1 behoben; Typ-Redundanz identifiziert. |
-| **03. Q-Learning Relative Typen** | `(b1rel, b2rel, b1cat, b2cat)` | 81 | 243 | **Ja** | Typ-Invarianz; exakte Gauß-Summen-Rückabwicklung verhindert Punkte-Farmen vollständig. |
-| **04. Q-Learning LastCollect** | `(b1rel, b2rel, b1cat, b2cat, lastcollect)` | 243 | 729 | **Ja** | POMDP-Gedächtnis ($0=\text{Init}, 1=\text{Collected}, 2=\text{NotCollected}$) zur Erkennung von Schleifenstau. |
-| **05. Q-Learning Minimal** | `(b1rel, b2rel)` | **9** | **27** | **Ja** | Reduktion auf 6 Äquivalenzklassen. **Maximale Konvergenzgeschwindigkeit** in $\approx 10$ Episoden. |
+### Running the Simulation (`main.py`)
 
----
+Select mode at the top of `python/main.py`:
 
-## 4. Wichtigste wissenschaftliche Erkenntnisse
+```python
+MODE = "train"  # "train" = run Q-learning, "test" = evaluate learned Q-table
+SAVE_CSV_DATA = True
+```
 
-1. **Relative Zustandskodierung (Type Invariance):**
-   Durch die Abstraktion von absoluten Teilenummern ($1, 2, 3$) auf relationale Zustände ($\text{Leer}, \text{Match}, \text{Mismatch}$) schrumpft der Zustandsraum von 432 auf **9 Zustände** ($98\,\%$ Reduktion), wodurch das System blitzschnell konvergiert.
-2. **Puffersymmetrie (Data Augmentation):**
-   Das synchrone Q-Update der gespiegelten Pufferbelegung verdoppelt die effektive Stichprobengröße und garantiert vollkommen ausbalancierte Entscheidungen für beide Puffer.
-3. **Potentialerhaltendes Reward-Design (Anti-Farming):**
-   Das progressive Belohnen beim Pufferaufbau ($\sum_{i=1}^n i = \frac{n(n+1)}{2}$) erfordert beim Verlust des Puffers exakt denselben Gaußschen Strafabzug, um unendliche Füll-Flush-Zyklen (Reward Hacking) mathematisch auszuschließen.
-4. **Schleifenlatenz vs. Stau-Pufferung (LastCollect-Analyse):**
-   Das bewusste Abweisen seltener Teile in die Schleife, um auf den Stautyp zu warten, verursacht pro $1.000$ Teile exakt $15$ zusätzliche Transportschritte ($100 \text{ Drains} \times 16{,}7\,\%$). Das sofortige Belegen des freien Puffers (Parallelität) erweist sich im kontinuierlichen Fließsystem als minimal robuster.
-
----
-
-## 5. Schnellanleitung / Ausführung
-
-### Voraussetzungen:
-* Windows 10 / 11 mit installierter **Tecnomatix Plant Simulation (16.1)**
-* Python 3.10+ mit `numpy`, `matplotlib`, `pywin32`
-
-### Ausführung:
-In [python/main.py](file:///c:/Users/Niko/OneDrive%20-%20Fachhochschule%20Bielefeld/Diskrete%20Simulation%20und%20Reinforcement%20Learning/Projekt/python/main.py) den gewünschten `AGENT_TYPE` wählen:
-* `"q_learning"`: Führt das RL-Training aus und sichert `q_table.npy` / `q_table.csv`.
-* `"training_test"`: Führt eine Auswertungsepisode mit der trainierten Q-Tabelle aus.
-* `"reflex"`: Führt den regelbasierten Reflex-Agenten aus.
-
-Programm im Terminal starten:
+Run:
 ```powershell
-cd "c:\Users\Niko\OneDrive - Fachhochschule Bielefeld\Diskrete Simulation und Reinforcement Learning\Projekt\python"
-python main.py
+python python/main.py
 ```
+
+- **`"train"` mode:** Runs tabular Q-learning, saves the trained policy to `python/agent/q_table.npy`, and exports `python/data/training_steps.csv` and `python/data/q_history.csv`.
+- **`"test"` mode:** Loads `python/agent/q_table.npy`, runs a greedy evaluation episode (to 1,000 parts), and exports `python/data/throughput.csv`.
+
+---
+
+### Generating Visualizations (`visualization.py`)
+
+```powershell
+python python/visualization/visualization.py
+```
+
+Generates four figures in `python/graph/`:
+1. **`steps_per_episode.png`:** Learning curve (steps required per episode).
+2. **`q_convergence_state_1_0.png`:** Q-value convergence curves for state `(1, 0)`.
+3. **`q_table.png`:** Complete formatted Q-table showing values and optimal actions.
+4. **`simulation_throughput.png`:** Drained parts over simulation time ($hh:mm$).
